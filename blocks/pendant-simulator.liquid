@@ -1,3 +1,9 @@
+{% doc %}
+  Interactive fluid pendant theme block. Settings are read from block.settings.
+  @example
+  Add Pendant simulator to an existing section that accepts @theme blocks.
+{% enddoc %}
+
 <pendant-simulator
   data-heading="{{ block.settings.heading | escape }}"
   data-show-heading="{{ block.settings.show_heading }}"
@@ -7,8 +13,55 @@
   data-gravity-strength="{{ block.settings.gravity_strength }}"
   {{ block.shopify_attributes }}
 >
-  {% render 'pendant-simulator-assets' %}
+  <template data-pendant-simulator-assets>
+    <link rel="stylesheet" href="{{ 'pendant-simulator.css' | asset_url }}">
+    <script src="{{ 'pendant-simulator.js' | asset_url }}" defer></script>
+  </template>
 </pendant-simulator>
+
+{% javascript %}
+  // Shopify delivers this hook once per block file in its external block-scripts
+  // bundle. Inert templates let repeated blocks share one real CSS/JS load.
+  const loaderKey = Symbol.for('pendant-simulator.asset-loader');
+  if (!window[loaderKey]) {
+    window[loaderKey] = true;
+    const loaded = new Set();
+
+    function loadAssets(root) {
+      const templates = root.matches?.('template[data-pendant-simulator-assets]')
+        ? [root] : root.querySelectorAll('template[data-pendant-simulator-assets]');
+      for (const template of templates) {
+        for (const tag of template.content.querySelectorAll('link[href], script[src]')) {
+          const isScript = tag.tagName === 'SCRIPT';
+          const attribute = isScript ? 'src' : 'href';
+          const url = new URL(tag.getAttribute(attribute), document.baseURI).href;
+          const key = `${tag.tagName}:${url}`;
+          if (loaded.has(key)) continue;
+          loaded.add(key);
+          const existing = Array.from(document.head.querySelectorAll(isScript ? 'script[src]' : 'link[rel="stylesheet"]'))
+            .some(asset => asset[attribute] === url);
+          if (existing) continue;
+          const asset = document.createElement(isScript ? 'script' : 'link');
+          asset[attribute] = url;
+          asset.dataset.pendantSimulatorAsset = isScript ? 'script' : 'style';
+          if (isScript) asset.defer = true;
+          else asset.rel = 'stylesheet';
+          asset.addEventListener('error', () => { loaded.delete(key); asset.remove(); }, { once: true });
+          document.head.append(asset);
+        }
+      }
+    }
+
+    loadAssets(document);
+    new MutationObserver(records => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element) loadAssets(node);
+        }
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+{% endjavascript %}
 
 {% schema %}
 {

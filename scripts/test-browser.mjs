@@ -16,19 +16,35 @@ const chrome = process.env.CHROME_PATH ?? [
 ].find(existsSync);
 assert.ok(chrome, 'Install Chrome or set CHROME_PATH to run browser checks');
 const temporary = await mkdtemp(join(tmpdir(), 'pendant-browser-'));
+const liquid = await readFile('blocks/pendant-simulator.liquid', 'utf8');
+const blockLoader = `(function(){${liquid.match(/{% javascript %}([\s\S]*?){% endjavascript %}/)[1]}\n})();`;
+const assetTemplate = liquid.match(/<template data-pendant-simulator-assets>[\s\S]*?<\/template>/)[0]
+  .replaceAll("{{ 'pendant-simulator.css' | asset_url }}", '/shopify/pendant-simulator.css')
+  .replaceAll("{{ 'pendant-simulator.js' | asset_url }}", '/shopify/pendant-simulator.js');
+const blockMarkup = attributes => `<pendant-simulator ${attributes}>${assetTemplate}</pendant-simulator>`;
+const assetRequests = { script: 0, style: 0 };
 const fixture = `<!doctype html><html><head>
 <link rel="stylesheet" href="/fixture.css">
-<link rel="stylesheet" href="/shopify/pendant-simulator.css">
-<script src="/shopify/pendant-simulator.js" defer></script>
+<script src="/block-loader.js" defer></script>
 </head><body><h2 id="theme-heading">Theme heading</h2><div class="pair" id="section">
-<pendant-simulator data-heading="One" data-particle-count="500"></pendant-simulator>
-<pendant-simulator data-heading="Two" data-particle-count="500"></pendant-simulator>
+${blockMarkup('data-heading="One" data-particle-count="500"')}
+${blockMarkup('data-heading="Two" data-particle-count="500"')}
 </div><div class="spacer"></div>
-<pendant-simulator id="below" data-particle-count="500"></pendant-simulator>
+${blockMarkup('id="below" data-particle-count="500"')}
 </body></html>`;
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://test').pathname;
   response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'");
+  response.setHeader('Cache-Control', 'no-store');
+  if (path === '/block-loader.js') {
+    // Shopify extracts {% javascript %} into its external block-scripts.js.
+    response.setHeader('Content-Type', 'text/javascript'); response.end(blockLoader); return;
+  }
+  if (path === '/empty-fixture') {
+    response.setHeader('Content-Type', 'text/html');
+    response.end('<!doctype html><html><head><link rel="stylesheet" href="/fixture.css"><script src="/block-loader.js" defer></script></head><body></body></html>');
+    return;
+  }
   if (path === '/fixture') {
     response.setHeader('Content-Type', 'text/html'); response.end(fixture); return;
   }
@@ -41,6 +57,8 @@ const server = createServer(async (request, response) => {
     path.startsWith('/assets/') ? `dist/standalone${path}` :
     path === '/standalone' ? 'dist/standalone/index.html' : null;
   if (!file) { response.writeHead(404); response.end(); return; }
+  if (path === '/shopify/pendant-simulator.js') assetRequests.script++;
+  if (path === '/shopify/pendant-simulator.css') assetRequests.style++;
   try {
     response.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html');
     response.end(await readFile(resolve(file)));
@@ -108,11 +126,16 @@ try {
     EventTarget.prototype.addEventListener = function(type, listener, options) { __listeners.push({target:this,type,listener}); return add.call(this,type,listener,options); };
     EventTarget.prototype.removeEventListener = function(type, listener, options) { __listeners=__listeners.filter(record=>!(record.target===this&&record.type===type&&record.listener===listener)); return remove.call(this,type,listener,options); };
     window.__csp = []; document.addEventListener('securitypolicyviolation', event=>__csp.push(event.violatedDirective));
+    window.__loaderObservers=0;const NativeMutationObserver=window.MutationObserver;
+    window.MutationObserver=class extends NativeMutationObserver {constructor(...args){super(...args);__loaderObservers++;}};
     window.DeviceMotionEvent = class extends Event { static requestPermission() { return Promise.resolve('granted'); } };
     window.DeviceOrientationEvent = class extends Event { static requestPermission() { return Promise.resolve('granted'); } };
   ` });
   await command('Page.navigate', { url: `${origin}/fixture` });
   await waitFor('!!window.PendantSimulator && document.querySelectorAll(".pendant-simulator").length === 3 && __frames.size === 2');
+  assert.deepEqual(assetRequests, { script: 1, style: 1 });
+  assert.equal(await evaluate('document.head.querySelectorAll("[data-pendant-simulator-asset]").length'), 2);
+  assert.equal(await evaluate('__loaderObservers'), 1);
   assert.equal(await evaluate('document.querySelectorAll(".pendant-simulator [id]").length'), 0);
   assert.deepEqual(await evaluate('({size:getComputedStyle(document.querySelector("#theme-heading")).fontSize,color:getComputedStyle(document.querySelector("#theme-heading")).color})'),
     { size: '37px', color: 'rgb(1, 2, 3)' });
@@ -136,6 +159,9 @@ try {
   assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 0);
   await evaluate('PendantSimulator.mountSimulator(a)');
   await waitFor('__frames.size === 2');
+  await evaluate(`new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/block-loader.js?again';script.onload=resolve;script.onerror=reject;document.body.append(script)})`);
+  assert.deepEqual(assetRequests, { script: 1, style: 1 });
+  assert.equal(await evaluate('__loaderObservers'), 1);
   await evaluate(`new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/shopify/pendant-simulator.js?again';script.onload=resolve;script.onerror=reject;document.body.append(script)})`);
   assert.equal(await evaluate('document.querySelectorAll(".pendant-simulator").length'), 3);
   assert.equal(await evaluate('__listeners.filter(record=>record.type==="shopify:section:load").length'), 1);
@@ -168,10 +194,23 @@ try {
   await evaluate('document.querySelector("#section").remove();document.querySelector("#below").remove()');
   assert.equal(await evaluate('__frames.size'), 0);
   assert.equal(await evaluate('__listeners.filter(record=>["visibilitychange","pagehide","pageshow","devicemotion","deviceorientation"].includes(record.type)).length'), 0);
-  // Like the editor's first Add block operation: HTML is inserted without
-  // executing a new script. The layout-loaded custom element must mount it.
-  await evaluate('document.body.insertAdjacentHTML("afterbegin",`<pendant-simulator data-particle-count="500"></pendant-simulator>`);window.scrollTo(0,0)');
+  // The editor inserts only block markup; templates themselves must not fetch
+  // or execute assets. The once-per-file hook watches the new markup.
+  await evaluate(`document.body.insertAdjacentHTML('afterbegin',${JSON.stringify(blockMarkup('data-particle-count="500"'))});window.scrollTo(0,0)`);
   await waitFor('document.querySelectorAll(".pendant-simulator").length === 1 && __frames.size === 1');
+  assert.deepEqual(assetRequests, { script: 2, style: 1 }); // Includes the deliberate ?again runtime test.
+  assert.deepEqual(await evaluate('__csp'), []);
+  // Start with no blocks at all, then add the first and repeated instances.
+  await command('Page.navigate', { url: `${origin}/empty-fixture` });
+  await waitFor('__loaderObservers === 1');
+  const beforeInsertion = { ...assetRequests };
+  assert.equal(await evaluate('!!window.PendantSimulator'), false);
+  await evaluate(`document.body.insertAdjacentHTML('beforeend',${JSON.stringify(blockMarkup('data-particle-count="500"'))})`);
+  await waitFor('document.querySelectorAll(".pendant-simulator").length === 1');
+  await evaluate(`document.body.insertAdjacentHTML('beforeend',${JSON.stringify(blockMarkup('data-particle-count="500"').repeat(2))})`);
+  await waitFor('document.querySelectorAll(".pendant-simulator").length === 3');
+  assert.deepEqual(assetRequests, { script: beforeInsertion.script + 1, style: beforeInsertion.style + 1 });
+  assert.equal(await evaluate('document.head.querySelectorAll("[data-pendant-simulator-asset]").length'), 2);
   assert.deepEqual(await evaluate('__csp'), []);
   await command('Page.navigate', { url: `${origin}/standalone` });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
@@ -185,7 +224,7 @@ try {
   await command('Page.navigate', { url: devServer.resolvedUrls.local[0] });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: independent canvases/stirring/sensors; idempotent mounts; cleanup; duplicate scripts; Shopify reloads; safe settings; offscreen/hidden pause; mobile layout; strict production CSP; standalone build and Vite development.');
+  console.log('Browser checks passed: one CSS/JS load across repeated and dynamically added blocks; first insertion on an empty page; independent canvases/stirring/sensors; cleanup; Shopify reloads; strict CSP; mobile layout; standalone build and Vite development.');
 } finally {
   await devServer?.close();
   socket?.close();

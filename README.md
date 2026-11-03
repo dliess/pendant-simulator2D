@@ -13,6 +13,7 @@ npm test
 npm run test:browser
 npm run build
 npm run build:shopify
+npm run deploy:theme
 ```
 
 `npm run dev` serves the standalone application. `npm run build` produces it in
@@ -30,8 +31,6 @@ dist/shopify-theme/
   assets/pendant-simulator.js
   assets/pendant-simulator.css
   blocks/pendant-simulator.liquid
-  sections/pendant-simulator.liquid
-  snippets/pendant-simulator-assets.liquid
 ```
 
 The JS is a self-contained IIFE exposing `window.PendantSimulator.mountSimulator`.
@@ -46,40 +45,66 @@ checks under a strict CSP. Install Chrome or set `CHROME_PATH` to its executable
 
 ## Install into a Shopify theme
 
-1. Run `npm run build:shopify`.
-2. Copy the five files from `dist/shopify-theme` into the matching `assets`,
-   `blocks`, `sections`, and `snippets` directories of your existing theme. This directory
-   contains additions to a theme, not a complete standalone Shopify theme.
-3. In `layout/theme.liquid`, add the following before `</head>` so the editor
-   loads the component even on a page that initially has no simulator blocks:
+Run this from `pendant-simulator2D`:
 
-   ```liquid
-   {% if request.design_mode %}
-     {% render 'pendant-simulator-assets' %}
-   {% endif %}
-   ```
+```sh
+npm run deploy:theme
+```
 
-   This is a Liquid include of external assets, with no inline JavaScript.
-   You can also render the snippet unconditionally once in the layout if your
-   storefront inserts simulator blocks dynamically outside the theme editor.
-4. In **Online Store → Themes → Customize**, open the desired **product template**.
-5. If its product section supports native theme blocks, use **Add block → Pendant
-   simulator** there. Otherwise, use **Add section → Pendant simulator**: the
-   supplied product-page section already contains the simulator block.
-6. Configure the heading, heading visibility, maximum display width, initial fill
-   height, particle count, and gravity strength. Save the template.
+It builds the Shopify production bundle and deploys exactly these three files into
+`../my-shopify-theme`, creating only their missing destination directories:
 
-Copy new JS and CSS assets again after changing the simulator. Use Shopify's
-asset URLs as supplied by the Liquid block; there is no localhost dependency.
-The block loads its own external stylesheet and deferred script, and can appear
-multiple times on a page. Repeated asset execution does not duplicate mounts or
-editor event listeners.
+```text
+assets/pendant-simulator.js
+assets/pendant-simulator.css
+blocks/pendant-simulator.liquid
+```
 
-Native theme blocks are available in sections that accept `@theme` blocks and
-render `{% content_for 'blocks' %}`. An older theme's local product blocks cannot
-automatically accept an arbitrary file from `blocks/`; the included section is
-the alternative. See [Shopify theme blocks](https://shopify.dev/docs/storefronts/themes/architecture/blocks/theme-blocks)
-and [editor lifecycle events](https://shopify.dev/docs/storefronts/themes/best-practices/editor/integrate-sections-and-blocks).
+To choose a different local destination, use:
+
+```sh
+npm run deploy:theme -- ../another-theme
+npm run deploy:theme -- /path/to/my-shopify-theme
+```
+
+The default and relative arguments resolve from this project's directory. To build
+without deploying, run `npm run build:shopify`; the same three files are packaged
+under `dist/shopify-theme` for manual copying.
+
+Open the desired product template in **Online Store → Themes → Customize**, then
+choose **Add block → Pendant simulator** in an existing section that accepts native
+`@theme` blocks. Configure its heading, display width, fill height, particle count,
+and gravity strength. No standalone section, asset-loader snippet, layout edit,
+or template edit is required. Sections that only support their own local block
+types cannot accept an arbitrary native theme block; this deployment does not
+modify existing sections to add support.
+
+The CSS and JS asset-loading tags live directly in the block, inside an inert
+`<template>`. Shopify's `{% javascript %}` hook is delivered once per block file
+in its external `block-scripts.js`; it activates one stylesheet and one simulator
+script per URL. Repeated instances, editor reloads, or dynamically added blocks
+reuse those assets. This works when the first block is added to an initially empty
+editor page, without inline JavaScript or `unsafe-eval`.
+See [Shopify's bundled block JavaScript](https://shopify.dev/docs/storefronts/themes/best-practices/javascript-and-stylesheet-tags).
+
+Deployment replaces only the three simulator-owned paths above. As a migration
+from the previous integration, it also removes exactly these two obsolete files
+when present:
+
+```text
+snippets/pendant-simulator-assets.liquid
+sections/pendant-simulator.liquid
+```
+
+Other assets, sections, snippets, layouts, templates, merchant settings, locales,
+and Git metadata remain untouched. Cleanup does not delete directories or search
+for other files to remove. Repeated deployments are safe, and a failed build
+prevents both copying and migration cleanup. Symlinked destinations are rejected.
+Both repositories stay independent; nothing is uploaded or published to Shopify.
+
+Run `npm run deploy:theme` after future simulator changes, then review and commit
+changes separately in each repository. Shopify CDN URLs are supplied by the block;
+there is no localhost dependency.
 
 ## Mount API and lifecycle
 

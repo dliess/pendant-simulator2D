@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { Script } from 'node:vm';
+import { themeFiles, obsoleteThemeFiles } from '../scripts/theme-files.mjs';
 import { test } from 'node:test';
 
 function schema(path) {
@@ -12,11 +14,16 @@ test('native theme block exposes configurable settings and editor identity witho
   assert.equal(block.tag, null);
   assert.ok(block.presets.length > 0);
   assert.equal((liquid.match(/block\.shopify_attributes/g) ?? []).length, 1);
-  assert.ok(liquid.trimStart().startsWith('<pendant-simulator'));
+  assert.ok(liquid.replace(/{% doc %}[\s\S]*?{% enddoc %}/, '').trimStart().startsWith('<pendant-simulator'));
   assert.ok(liquid.includes('block.settings.heading | escape'));
-  assert.ok(liquid.includes("{% render 'pendant-simulator-assets' %}"));
-  const assets = readFileSync('snippets/pendant-simulator-assets.liquid', 'utf8');
-  assert.match(assets, /<script src="{{ 'pendant-simulator\.js' \| asset_url }}" defer><\/script>/);
+  assert.doesNotMatch(liquid, /{% render /);
+  assert.match(liquid, /<template data-pendant-simulator-assets>/);
+  assert.match(liquid, /<link rel="stylesheet" href="{{ 'pendant-simulator\.css' \| asset_url }}">/);
+  assert.match(liquid, /<script src="{{ 'pendant-simulator\.js' \| asset_url }}" defer><\/script>/);
+  assert.doesNotMatch(liquid, /<script(?![^>]*\bsrc=)[^>]*>/);
+  const bootstrap = liquid.match(/{% javascript %}([\s\S]*?){% endjavascript %}/)[1];
+  assert.doesNotMatch(bootstrap, /{{|{%/);
+  new Script(bootstrap);
   for (const id of ['heading', 'show_heading', 'display_width', 'particle_count', 'fill_level', 'gravity_strength']) {
     assert.ok(block.settings.some(setting => setting.id === id), `missing ${id}`);
   }
@@ -27,12 +34,9 @@ test('native theme block exposes configurable settings and editor identity witho
   }
 });
 
-test('optional product-page section accepts native theme blocks and provides a preset', () => {
-  const { liquid, schema: section } = schema('sections/pendant-simulator.liquid');
-  assert.ok(liquid.includes("{% content_for 'blocks' %}"));
-  assert.deepEqual(section.enabled_on.templates, ['product']);
-  assert.ok(section.blocks.some(block => block.type === '@theme'));
-  assert.equal(section.presets[0].blocks[0].type, 'pendant-simulator');
+test('Shopify integration is block-only with exactly three deployable files', () => {
+  assert.deepEqual(themeFiles, ['assets/pendant-simulator.js', 'assets/pendant-simulator.css', 'blocks/pendant-simulator.liquid']);
+  for (const file of obsoleteThemeFiles) assert.equal(existsSync(file), false);
 });
 
 test('embeddable CSS has no theme-wide selectors or global element IDs', () => {

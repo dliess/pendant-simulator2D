@@ -1,15 +1,14 @@
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { themeFiles } from './theme-files.mjs';
 
 // A theme-file overlay, ready to copy into an existing Shopify theme. Keep the
 // requested two-file browser build in dist/shopify as well.
-for (const directory of ['assets', 'blocks', 'sections', 'snippets']) {
-  await mkdir(`dist/shopify-theme/${directory}`, { recursive: true });
+await rm('dist/shopify-theme', { recursive: true, force: true });
+for (const file of themeFiles) {
+  const source = file.startsWith('assets/') ? file.replace('assets/', 'dist/shopify/') : file;
+  const destination = `dist/shopify-theme/${file}`;
+  await mkdir(dirname(destination), { recursive: true });
+  await copyFile(source, destination);
 }
-for (const filename of ['pendant-simulator.js', 'pendant-simulator.css']) {
-  await copyFile(`dist/shopify/${filename}`, `dist/shopify-theme/assets/${filename}`);
-}
-for (const directory of ['blocks', 'sections']) {
-  await copyFile(`${directory}/pendant-simulator.liquid`, `dist/shopify-theme/${directory}/pendant-simulator.liquid`);
-}
-await copyFile('snippets/pendant-simulator-assets.liquid', 'dist/shopify-theme/snippets/pendant-simulator-assets.liquid');
 console.log('Shopify theme files prepared in dist/shopify-theme/');
