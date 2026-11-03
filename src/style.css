@@ -17,5 +17,10 @@ body {
 canvas {
   width: min(90vw, 400px);
   height: auto;
+  cursor: grab;
+}
+
+canvas:active {
+  cursor: grabbing;
 }
 

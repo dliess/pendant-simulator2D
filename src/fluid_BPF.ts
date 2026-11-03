@@ -7,6 +7,7 @@ export interface Particle {
 }
 
 export class FluidSimulation {
+  readonly radius: number;
   particles: Particle[] = [];
 
   gravityX = 0;
@@ -21,9 +22,10 @@ export class FluidSimulation {
   private grid = new Map<string, number[]>();
 
   constructor(
-    public readonly radius = 1,
+    radius = 1,
     particleCount = 500
   ) {
+    this.radius = radius;
     // Start in a compact, slightly jittered lattice.
     const spacing = 0.035;
     const columns = 14;

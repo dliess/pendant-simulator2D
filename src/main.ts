@@ -37,7 +37,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       height="${CANVAS_SIZE}"
     ></canvas>
 
-    <p>Drag across the pendant to change gravity</p>
+    <p>Drag through the liquid to stir it</p>
   </div>
 `;
 
@@ -57,6 +57,7 @@ const fluid = new FluidSimulation(
   PARTICLE_COUNT,
   FILL_LEVEL
 );
+fluid.setGravity(0, GRAVITY_STRENGTH);
 
 // --------------------------------------------------
 // LED positions
@@ -87,37 +88,62 @@ for (let y = 0; y < GRID_SIZE; y++) {
 }
 
 // --------------------------------------------------
-// Mouse and touch gravity controls
+// Mouse and touch stirring
 // --------------------------------------------------
 
-function updateGravity(event: PointerEvent) {
+interface DragPoint {
+  pointerId: number;
+  x: number;
+  y: number;
+  time: number;
+}
+
+let dragPoint: DragPoint | null = null;
+
+function pointerPosition(event: PointerEvent): DragPoint {
   const rect = canvas.getBoundingClientRect();
 
-  const x =
-    (event.clientX - rect.left) / rect.width - 0.5;
-
-  const y =
-    (event.clientY - rect.top) / rect.height - 0.5;
-
-  const length = Math.hypot(x, y);
-
-  if (length < 0.01) return;
-
-  fluid.setGravity(
-    x / length * GRAVITY_STRENGTH,
-    y / length * GRAVITY_STRENGTH
-  );
+  return {
+    pointerId: event.pointerId,
+    x: ((event.clientX - rect.left) / rect.width * CANVAS_SIZE - CENTER) / DISPLAY_RADIUS,
+    y: ((event.clientY - rect.top) / rect.height * CANVAS_SIZE - CENTER) / DISPLAY_RADIUS,
+    time: event.timeStamp,
+  };
 }
 
 canvas.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 || dragPoint !== null) return;
+  dragPoint = pointerPosition(event);
   canvas.setPointerCapture(event.pointerId);
-  updateGravity(event);
 });
 
 canvas.addEventListener('pointermove', (event) => {
-  if (event.buttons === 0) return;
-  updateGravity(event);
+  if (dragPoint?.pointerId !== event.pointerId) return;
+  if ((event.buttons & 1) === 0) {
+    endDrag(event);
+    return;
+  }
+
+  const next = pointerPosition(event);
+  fluid.dragParticles(
+    dragPoint.x, dragPoint.y,
+    next.x, next.y,
+    Math.max(0.001, (next.time - dragPoint.time) / 1000)
+  );
+  dragPoint = next;
 });
+
+function endDrag(event: PointerEvent) {
+  if (dragPoint?.pointerId !== event.pointerId) return;
+  dragPoint = null;
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+}
+
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('lostpointercapture', endDrag);
 
 // --------------------------------------------------
 // LED density sampling
