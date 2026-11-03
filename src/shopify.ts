@@ -12,7 +12,8 @@ if (!customElements.get(tag)) {
     static get observedAttributes() {
       return ['data-heading', 'data-show-heading', 'data-display-width',
         'data-particle-count', 'data-fill-level', 'data-gravity-strength',
-        'data-background-color', 'data-text-color', 'data-transparent-background'];
+        'data-background-color', 'data-text-color', 'data-transparent-background',
+        'data-react-to-scrolling'];
     }
 
     connectedCallback() { mountSimulator(this); }
@@ -20,6 +21,8 @@ if (!customElements.get(tag)) {
 
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
       if (!this.isConnected || oldValue === newValue) return;
+      // The frame loop reads this input setting live, preserving fluid and sensors.
+      if (name === 'data-react-to-scrolling') return;
       if (name === 'data-background-color' || name === 'data-text-color' || name === 'data-transparent-background') {
         updateSimulatorAppearance(this);
         return;

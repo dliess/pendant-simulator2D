@@ -74,7 +74,7 @@ under `dist/shopify-theme` for manual copying.
 Open the desired product template in **Online Store → Themes → Customize**, then
 choose **Add block → Pendant simulator** in an existing section that accepts native
 `@theme` blocks. Configure its heading, background color, text color, display width,
-fill height, particle count, and gravity strength. No standalone section, asset-loader snippet, layout edit,
+fill height, particle count, gravity strength, and **React to scrolling**. No standalone section, asset-loader snippet, layout edit,
 or template edit is required. Sections that only support their own local block
 types cannot accept an arbitrary native theme block; this deployment does not
 modify existing sections to add support.
@@ -145,6 +145,28 @@ permission requests, releases the canvas buffer, and removes the instance UI.
 Offscreen blocks and hidden tabs do no animation or simulation work. Resuming
 resets the clock so there is no catch-up burst. Browsers without
 `IntersectionObserver` still pause when the page is hidden.
+
+## Scroll motion
+
+The block's **React to scrolling** checkbox turns scroll inertia on or off for
+that instance (on by default). Changing it preserves the fluid, canvas, and phone
+motion permissions. Turning it off clears pending scroll forces; the liquid keeps
+its existing momentum and responds to gravity, dragging, and enabled phone motion.
+Standalone embeds can opt out with `data-react-to-scrolling="false"` on their
+container; omitting the attribute enables scroll inertia.
+
+The force follows changes in the pendant's actual viewport
+velocity, including movement inside nested scroll areas. Starting a downward
+page scroll moves a normal pendant upward, pushing the liquid downward; stopping
+produces an upward rebound. Steady scrolling produces no sustained extra force.
+Sticky or fixed pendants react only while their position on screen changes.
+
+Scroll input is smoothed, scaled to the displayed pendant size, and limited to
+twice the configured gravity strength. It adds to downward gravity or enabled
+phone motion; drag stirring continues to work. Layout shifts without scrolling
+do not create impulses. Resizing, hiding, or moving the block offscreen resets
+the scroll history, preventing a catch-up jolt when it becomes visible again.
+No sensor permission or HTTPS is needed for scroll input.
 
 ## Phone motion
 

@@ -45,12 +45,20 @@ const server = createServer(async (request, response) => {
     response.end('<!doctype html><html><head><link rel="stylesheet" href="/fixture.css"><script src="/block-loader.js" defer></script></head><body></body></html>');
     return;
   }
+  if (path === '/scroll-fixture') {
+    response.setHeader('Content-Type', 'text/html');
+    response.end(`<!doctype html><html><head><link rel="stylesheet" href="/fixture.css"><script src="/block-loader.js" defer></script></head><body class="scroll-test">
+      <div id="scroll-area">${blockMarkup('id="moving" data-particle-count="500"')}<div class="spacer"></div></div>
+      ${blockMarkup('id="fixed" data-particle-count="500"')}
+      </body></html>`);
+    return;
+  }
   if (path === '/fixture') {
     response.setHeader('Content-Type', 'text/html'); response.end(fixture); return;
   }
   if (path === '/fixture.css') {
     response.setHeader('Content-Type', 'text/css');
-    response.end('body{margin:0}.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.spacer{height:3000px}#theme-heading{font-size:37px;color:rgb(1,2,3)}@media(max-width:600px){.pair{grid-template-columns:1fr}}');
+    response.end('body{margin:0}.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.spacer{height:3000px}#theme-heading{font-size:37px;color:rgb(1,2,3)}.scroll-test{height:3000px}.scroll-test #scroll-area{width:450px;height:750px;overflow:auto;margin-top:200px}.scroll-test #fixed{position:fixed;top:200px;right:0;width:450px}@media(max-width:600px){.pair{grid-template-columns:1fr}}');
     return;
   }
   const file = path.startsWith('/shopify/') ? `dist${path}` :
@@ -218,7 +226,7 @@ try {
   await writeFile('/tmp/pendant-shopify-smoke.png', Buffer.from(screenshot.data, 'base64'));
   await evaluate('document.querySelector("#section").remove();document.querySelector("#below").remove()');
   assert.equal(await evaluate('__frames.size'), 0);
-  assert.equal(await evaluate('__listeners.filter(record=>["visibilitychange","pagehide","pageshow","devicemotion","deviceorientation"].includes(record.type)).length'), 0);
+  assert.equal(await evaluate('__listeners.filter(record=>["visibilitychange","pagehide","pageshow","devicemotion","deviceorientation","scroll","resize"].includes(record.type)).length'), 0);
   // The editor inserts only block markup; templates themselves must not fetch
   // or execute assets. The once-per-file hook watches the new markup.
   await evaluate(`document.body.insertAdjacentHTML('afterbegin',${JSON.stringify(blockMarkup('data-particle-count="500"'))});window.scrollTo(0,0)`);
@@ -237,6 +245,69 @@ try {
   assert.deepEqual(assetRequests, { script: beforeInsertion.script + 1, style: beforeInsertion.style + 1 });
   assert.equal(await evaluate('document.head.querySelectorAll("[data-pendant-simulator-asset]").length'), 2);
   assert.deepEqual(await evaluate('__csp'), []);
+  // Compare an actual moving pendant with a fixed one. Both start with identical
+  // fluid, then receive identical phone readings; only one moves while scrolling.
+  await command('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await command('Page.navigate', { url: `${origin}/scroll-fixture` });
+  await waitFor('document.querySelectorAll(".pendant-simulator").length === 2 && __frames.size === 2');
+  await evaluate(`window.moving=document.querySelector('#moving');window.fixed=document.querySelector('#fixed');
+    window.sameFluid=()=>moving.querySelector('canvas').toDataURL()===fixed.querySelector('canvas').toDataURL();
+    __advance(120)`);
+  assert.equal(await evaluate('sameFluid()'), true);
+  await evaluate(`moving.querySelector('button').click();fixed.querySelector('button').click()`);
+  await waitFor(`moving.querySelector('button').getAttribute('aria-pressed')==='true' && fixed.querySelector('button').getAttribute('aria-pressed')==='true'`);
+  await evaluate(`window.tilt=new Event('deviceorientation');tilt.beta=90;tilt.gamma=5;window.dispatchEvent(tilt);__advance(60)`);
+  assert.equal(await evaluate('sameFluid()'), true);
+  for (let step = 1; step <= 24; step++) {
+    await evaluate(`window.scrollTo(0,${step * 8});document.dispatchEvent(new Event('scroll'));__advance(1)`);
+  }
+  await evaluate('__advance(60)');
+  assert.equal(await evaluate('sameFluid()'), false, 'page scroll adds inertia alongside phone input');
+  assert.equal(await evaluate(`fixed.querySelector('canvas').getBoundingClientRect().top`),
+    await evaluate(`moving.querySelector('canvas').getBoundingClientRect().top + scrollY`));
+  // Start fresh and exercise a nested scroll container rather than the page.
+  await evaluate(`for(const block of [moving,fixed]){PendantSimulator.mountSimulator(block)();PendantSimulator.mountSimulator(block)}`);
+  await waitFor('__frames.size === 2');
+  await evaluate('__advance(120)');
+  assert.equal(await evaluate('sameFluid()'), true);
+  for (let step = 1; step <= 24; step++) {
+    await evaluate(`{const area=document.querySelector('#scroll-area');area.scrollTop=${step * 8};area.dispatchEvent(new Event('scroll'));__advance(1)}`);
+  }
+  await evaluate('__advance(60)');
+  assert.equal(await evaluate('sameFluid()'), false, 'nested scroll events reach the instance');
+  // Disabled blocks still scroll normally, but their liquid evolves exactly like
+  // the stationary control, including when both have phone motion enabled.
+  await evaluate(`moving.dataset.reactToScrolling='false';fixed.dataset.reactToScrolling='false';
+    window.scrollTo(0,0);document.querySelector('#scroll-area').scrollTop=0;
+    for(const block of [moving,fixed]){PendantSimulator.mountSimulator(block)();PendantSimulator.mountSimulator(block)}`);
+  await waitFor('__frames.size === 2');
+  await evaluate(`__advance(120);moving.querySelector('button').click();fixed.querySelector('button').click()`);
+  await waitFor(`moving.querySelector('button').getAttribute('aria-pressed')==='true' && fixed.querySelector('button').getAttribute('aria-pressed')==='true'`);
+  await evaluate(`window.dispatchEvent(tilt);__advance(60);
+    window.toggleCanvas=moving.querySelector('canvas');window.toggleCleanup=PendantSimulator.mountSimulator(moving)`);
+  assert.equal(await evaluate('sameFluid()'), true);
+  for (let step = 1; step <= 24; step++) {
+    await evaluate(`window.scrollTo(0,${step * 8});document.dispatchEvent(new Event('scroll'));__advance(1)`);
+  }
+  await evaluate('__advance(60)');
+  assert.equal(await evaluate('sameFluid()'), true, 'turning scroll reaction off preserves normal gravity and phone input');
+  await evaluate(`window.toggleImage=toggleCanvas.toDataURL();moving.dataset.reactToScrolling='true'`);
+  assert.equal(await evaluate(`moving.querySelector('canvas')===toggleCanvas && toggleCanvas.toDataURL()===toggleImage && PendantSimulator.mountSimulator(moving)===toggleCleanup`), true);
+  assert.equal(await evaluate(`moving.querySelector('button').getAttribute('aria-pressed')`), 'true');
+  assert.equal(await evaluate(`fixed.dataset.reactToScrolling`), 'false');
+  await evaluate('__advance(1)');
+  for (let step = 1; step <= 24; step++) {
+    await evaluate(`{const area=document.querySelector('#scroll-area');area.scrollTop=${step * 8};area.dispatchEvent(new Event('scroll'));__advance(1)}`);
+  }
+  assert.equal(await evaluate('sameFluid()'), false, 're-enabling scroll motion takes effect on just that block');
+  await evaluate(`window.toggleImage=toggleCanvas.toDataURL();moving.dataset.reactToScrolling='false'`);
+  assert.equal(await evaluate(`moving.querySelector('canvas')===toggleCanvas && toggleCanvas.toDataURL()===toggleImage && PendantSimulator.mountSimulator(moving)===toggleCleanup`), true);
+  assert.equal(await evaluate(`moving.querySelector('button').getAttribute('aria-pressed')`), 'true');
+  assert.equal(await evaluate('__frames.size'), 2);
+  await evaluate('moving.remove();fixed.remove()');
+  assert.equal(await evaluate('__frames.size'), 0);
+  assert.equal(await evaluate('__listeners.filter(record=>["scroll","resize","devicemotion","deviceorientation"].includes(record.type)).length'), 0);
+  assert.deepEqual(await evaluate('__csp'), []);
   await command('Page.navigate', { url: `${origin}/standalone` });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
@@ -249,7 +320,7 @@ try {
   await command('Page.navigate', { url: devServer.resolvedUrls.local[0] });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: per-block background/text colors and alpha; live style updates preserve canvas, motion and fluid state; invalid-color fallback; single asset loading; independent stirring/sensors; cleanup; editor reloads; CSP; mobile layout; standalone and Vite development.');
+  console.log('Browser checks passed: live per-block scroll toggle preserves fluid and sensors; page/nested scroll inertia alongside sensors; fixed pendant; per-block background/text colors and alpha; live style updates preserve canvas, motion and fluid state; invalid-color fallback; single asset loading; independent stirring/sensors; cleanup; editor reloads; CSP; mobile layout; standalone and Vite development.');
 } finally {
   await devServer?.close();
   socket?.close();

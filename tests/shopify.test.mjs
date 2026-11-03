@@ -24,7 +24,7 @@ test('native theme block exposes configurable settings and editor identity witho
   const bootstrap = liquid.match(/{% javascript %}([\s\S]*?){% endjavascript %}/)[1];
   assert.doesNotMatch(bootstrap, /{{|{%/);
   new Script(bootstrap);
-  for (const id of ['heading', 'show_heading', 'transparent_background', 'background_color', 'text_color', 'display_width', 'particle_count', 'fill_level', 'gravity_strength']) {
+  for (const id of ['heading', 'show_heading', 'transparent_background', 'background_color', 'text_color', 'display_width', 'particle_count', 'fill_level', 'gravity_strength', 'react_to_scrolling']) {
     assert.ok(block.settings.some(setting => setting.id === id), `missing ${id}`);
   }
   assert.deepEqual(block.settings.filter(setting => setting.type === 'color').map(setting => [setting.id, setting.default]),
@@ -34,6 +34,9 @@ test('native theme block exposes configurable settings and editor identity witho
   assert.equal(block.settings.find(setting => setting.id === 'transparent_background').type, 'checkbox');
   assert.equal(block.settings.find(setting => setting.id === 'transparent_background').default, false);
   assert.match(liquid, /data-transparent-background="{{ block\.settings\.transparent_background }}"/);
+  assert.equal(block.settings.find(setting => setting.id === 'react_to_scrolling').type, 'checkbox');
+  assert.equal(block.settings.find(setting => setting.id === 'react_to_scrolling').default, true);
+  assert.match(liquid, /data-react-to-scrolling="{{ block\.settings\.react_to_scrolling }}"/);
   for (const setting of block.settings.filter(setting => setting.type === 'range')) {
     assert.ok(setting.default >= setting.min && setting.default <= setting.max);
     assert.equal((setting.default - setting.min) % setting.step, 0);

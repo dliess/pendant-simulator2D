@@ -1,5 +1,6 @@
 import { FluidSimulation } from './fluid';
 import { PhoneMotion } from './motion';
+import { ScrollMotion } from './scroll';
 import type { MotionStatus } from './motion';
 
 const CANVAS_SIZE = 400;
@@ -75,6 +76,8 @@ export function mountSimulator(container: HTMLElement): () => void {
   let fluid: FluidSimulation | null = new FluidSimulation(1, particleCount, fillLevel);
   fluid.setGravity(0, gravityStrength);
   const motion = new PhoneMotion(view, gravityStrength, updateMotionStatus);
+  const scrollMotion = new ScrollMotion(gravityStrength);
+  let scrolledSinceFrame = false;
   const removers: (() => void)[] = [];
   let destroyed = false;
   let visible = !('IntersectionObserver' in view);
@@ -84,10 +87,17 @@ export function mountSimulator(container: HTMLElement): () => void {
   let accumulator = 0;
 
   // Explicit removers also work in themes that use older event-listener shims.
-  function listen(target: EventTarget, type: string, handler: (event: any) => void) {
-    target.addEventListener(type, handler);
-    removers.push(() => target.removeEventListener(type, handler));
+  function listen(target: EventTarget, type: string, handler: (event: any) => void, options?: AddEventListenerOptions) {
+    target.addEventListener(type, handler, options);
+    removers.push(() => target.removeEventListener(type, handler, options));
   }
+
+  // Capture also observes nested scrolling elements. Reading geometry and doing
+  // physics stays in the visible instance's existing animation loop.
+  listen(doc, 'scroll', () => {
+    if (active() && container.dataset.reactToScrolling !== 'false') scrolledSinceFrame = true;
+  }, { capture: true, passive: true });
+  listen(view, 'resize', () => { scrollMotion.reset(); scrolledSinceFrame = false; });
 
   function updateMotionStatus(status: MotionStatus) {
     const messages: Record<MotionStatus, string> = {
@@ -330,11 +340,23 @@ export function mountSimulator(container: HTMLElement): () => void {
   function animate(now: number) {
     frameId = null;
     if (!active() || !fluid) return;
-    const frameDt = Math.max(0, Math.min((now - lastTime) / 1000, 0.05));
+    const elapsed = (now - lastTime) / 1000;
+    const frameDt = Math.max(0, Math.min(elapsed, 0.05));
     lastTime = now;
     accumulator += frameDt;
     const acceleration = motion.sample(frameDt);
-    fluid.setGravity(acceleration.x, acceleration.y);
+    let scroll = { x: 0, y: 0 };
+    if (container.dataset.reactToScrolling !== 'false') {
+      const rect = canvas.getBoundingClientRect();
+      scroll = scrollMotion.sample({ x: rect.left, y: rect.top },
+        rect.width / CANVAS_SIZE * DISPLAY_RADIUS, elapsed, scrolledSinceFrame);
+    } else {
+      // Drop queued inertia as well as new input. Re-enabling starts with a fresh
+      // position baseline, without replacing the canvas or resetting the fluid.
+      scrollMotion.reset();
+    }
+    scrolledSinceFrame = false;
+    fluid.setGravity(acceleration.x + scroll.x, acceleration.y + scroll.y);
     let steps = 0;
     while (accumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
       fluid.update(FIXED_DT);
@@ -355,6 +377,8 @@ export function mountSimulator(container: HTMLElement): () => void {
   function reconcileVisibility() {
     lastTime = view!.performance.now();
     accumulator = 0;
+    scrollMotion.reset();
+    scrolledSinceFrame = false;
     if (!active()) {
       if (frameId !== null) view!.cancelAnimationFrame(frameId);
       frameId = null;
