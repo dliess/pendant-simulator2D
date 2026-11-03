@@ -24,3 +24,29 @@ canvas:active {
   cursor: grabbing;
 }
 
+.motion-controls {
+  width: min(90vw, 400px);
+  text-align: center;
+}
+
+.motion-controls button {
+  padding: 10px 18px;
+  border: 1px solid #596574;
+  border-radius: 8px;
+  background: #19354c;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+
+.motion-controls button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+#motion-status {
+  min-height: 2.5em;
+  color: #a6b4c4;
+  font-size: 0.9rem;
+}
+

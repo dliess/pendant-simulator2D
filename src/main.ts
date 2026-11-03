@@ -1,6 +1,8 @@
 
 import './style.css';
 import { FluidSimulation } from './fluid';
+import { PhoneMotion } from './motion';
+import type { MotionStatus } from './motion';
 
 // --------------------------------------------------
 // Configuration
@@ -38,6 +40,10 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     ></canvas>
 
     <p>Drag through the liquid to stir it</p>
+    <div class="motion-controls">
+      <button id="motion-toggle" type="button" aria-pressed="false">Enable phone motion</button>
+      <p id="motion-status" role="status"></p>
+    </div>
   </div>
 `;
 
@@ -58,6 +64,35 @@ const fluid = new FluidSimulation(
   FILL_LEVEL
 );
 fluid.setGravity(0, GRAVITY_STRENGTH);
+
+const motionButton = document.querySelector<HTMLButtonElement>('#motion-toggle')!;
+const motionStatus = document.querySelector<HTMLParagraphElement>('#motion-status')!;
+const motion = new PhoneMotion(window, GRAVITY_STRENGTH, updateMotionStatus);
+
+function updateMotionStatus(status: MotionStatus) {
+  const messages: Record<MotionStatus, string> = {
+    off: 'Enable phone motion to tilt and shake the liquid.',
+    requesting: 'Allow motion access in your browser.',
+    waiting: 'Move or tilt your phone to start.',
+    active: 'Tilt and shake your phone, or drag to stir.',
+    'no-data': 'No sensor readings yet. You can still drag to stir.',
+    denied: 'Motion access was denied. You can still drag to stir.',
+    unavailable: 'Phone motion is unavailable here. Drag to stir.',
+    insecure: 'Open this page over HTTPS to use phone motion.',
+    error: 'Could not enable motion. Try again, or drag to stir.',
+  };
+  motionButton.textContent = motion.enabled ? 'Disable phone motion' : 'Enable phone motion';
+  motionButton.disabled = status === 'requesting' || status === 'unavailable' || status === 'insecure';
+  motionButton.setAttribute('aria-pressed', String(motion.enabled));
+  motionStatus.textContent = messages[status];
+}
+
+updateMotionStatus(motion.status);
+motionButton.addEventListener('click', () => {
+  if (motion.enabled) motion.disable();
+  else void motion.enable();
+});
+window.addEventListener('pagehide', () => motion.disable());
 
 // --------------------------------------------------
 // LED positions
@@ -281,6 +316,9 @@ function animate(now: number) {
 
   lastTime = now;
   accumulator += frameDt;
+
+  const acceleration = motion.sample(frameDt);
+  fluid.setGravity(acceleration.x, acceleration.y);
 
   let steps = 0;
 
