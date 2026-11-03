@@ -1,0 +1,72 @@
+<pendant-simulator
+  data-heading="{{ block.settings.heading | escape }}"
+  data-show-heading="{{ block.settings.show_heading }}"
+  data-display-width="{{ block.settings.display_width }}"
+  data-particle-count="{{ block.settings.particle_count }}"
+  data-fill-level="{{ block.settings.fill_level }}"
+  data-gravity-strength="{{ block.settings.gravity_strength }}"
+  {{ block.shopify_attributes }}
+>
+  {% render 'pendant-simulator-assets' %}
+</pendant-simulator>
+
+{% schema %}
+{
+  "name": "Pendant simulator",
+  "tag": null,
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Try the pendant"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_heading",
+      "label": "Show heading",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "display_width",
+      "label": "Maximum display width",
+      "min": 200,
+      "max": 800,
+      "step": 20,
+      "unit": "px",
+      "default": 400
+    },
+    {
+      "type": "range",
+      "id": "fill_level",
+      "label": "Initial fill height",
+      "min": 10,
+      "max": 90,
+      "step": 5,
+      "unit": "%",
+      "default": 30
+    },
+    {
+      "type": "range",
+      "id": "particle_count",
+      "label": "Particle count",
+      "min": 500,
+      "max": 3000,
+      "step": 500,
+      "default": 2000,
+      "info": "Lower counts reduce simulation work on mobile devices."
+    },
+    {
+      "type": "range",
+      "id": "gravity_strength",
+      "label": "Gravity strength",
+      "min": 1,
+      "max": 30,
+      "step": 1,
+      "default": 14
+    }
+  ],
+  "presets": [{ "name": "Pendant simulator" }]
+}
+{% endschema %}

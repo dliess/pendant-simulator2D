@@ -1,0 +1,198 @@
+// Real-browser integration checks using Chrome's DevTools protocol, without an
+// npm browser driver. Run after both builds; CHROME_PATH can override detection.
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { once } from 'node:events';
+import { setTimeout as delay } from 'node:timers/promises';
+
+const chrome = process.env.CHROME_PATH ?? [
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
+].find(existsSync);
+assert.ok(chrome, 'Install Chrome or set CHROME_PATH to run browser checks');
+const temporary = await mkdtemp(join(tmpdir(), 'pendant-browser-'));
+const fixture = `<!doctype html><html><head>
+<link rel="stylesheet" href="/fixture.css">
+<link rel="stylesheet" href="/shopify/pendant-simulator.css">
+<script src="/shopify/pendant-simulator.js" defer></script>
+</head><body><h2 id="theme-heading">Theme heading</h2><div class="pair" id="section">
+<pendant-simulator data-heading="One" data-particle-count="500"></pendant-simulator>
+<pendant-simulator data-heading="Two" data-particle-count="500"></pendant-simulator>
+</div><div class="spacer"></div>
+<pendant-simulator id="below" data-particle-count="500"></pendant-simulator>
+</body></html>`;
+const server = createServer(async (request, response) => {
+  const path = new URL(request.url, 'http://test').pathname;
+  response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'");
+  if (path === '/fixture') {
+    response.setHeader('Content-Type', 'text/html'); response.end(fixture); return;
+  }
+  if (path === '/fixture.css') {
+    response.setHeader('Content-Type', 'text/css');
+    response.end('body{margin:0}.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.spacer{height:3000px}#theme-heading{font-size:37px;color:rgb(1,2,3)}@media(max-width:600px){.pair{grid-template-columns:1fr}}');
+    return;
+  }
+  const file = path.startsWith('/shopify/') ? `dist${path}` :
+    path.startsWith('/assets/') ? `dist/standalone${path}` :
+    path === '/standalone' ? 'dist/standalone/index.html' : null;
+  if (!file) { response.writeHead(404); response.end(); return; }
+  try {
+    response.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html');
+    response.end(await readFile(resolve(file)));
+  } catch { response.writeHead(404); response.end(); }
+});
+let browser;
+let socket;
+let devServer;
+try {
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  browser = spawn(chrome, ['--headless=new', '--disable-gpu', '--no-first-run',
+    '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${temporary}`, 'about:blank'],
+  { stdio: 'ignore' });
+  let debugPort;
+  for (let i = 0; i < 150; i++) {
+    try { debugPort = Number((await readFile(join(temporary, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); break; }
+    catch { await delay(100); }
+  }
+  assert.ok(debugPort, 'Chrome did not start its debugging endpoint');
+  const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
+  socket = new WebSocket(targets.find(target => target.type === 'page').webSocketDebuggerUrl);
+  await once(socket, 'open');
+  let sequence = 0;
+  const pending = new Map();
+  const errors = [];
+  socket.addEventListener('message', ({ data }) => {
+    const message = JSON.parse(data);
+    if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.text);
+    if (!message.id) return;
+    const handler = pending.get(message.id);
+    pending.delete(message.id);
+    if (message.error) handler.reject(new Error(JSON.stringify(message.error)));
+    else handler.resolve(message.result);
+  });
+  const command = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++sequence;
+    pending.set(id, { resolve, reject });
+    socket.send(JSON.stringify({ id, method, params }));
+  });
+  const evaluate = async expression => {
+    const result = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    assert.ok(!result.exceptionDetails, JSON.stringify(result.exceptionDetails));
+    return result.result.value;
+  };
+  const waitFor = async expression => {
+    for (let i = 0; i < 100; i++) {
+      if (await evaluate(expression)) return;
+      await delay(50);
+    }
+    throw new Error(`Timed out: ${expression}`);
+  };
+  await command('Page.enable');
+  await command('Runtime.enable');
+  await command('Emulation.setDeviceMetricsOverride', { width: 1000, height: 900, deviceScaleFactor: 1, mobile: false });
+  await command('Page.addScriptToEvaluateOnNewDocument', { source: `
+    window.__frames = new Map(); let nextFrame = 0; window.__now = 1000;
+    performance.now = () => window.__now;
+    window.requestAnimationFrame = callback => { const id = ++nextFrame; __frames.set(id, callback); return id; };
+    window.cancelAnimationFrame = id => __frames.delete(id);
+    window.__advance = count => { for (let i=0;i<count;i++) { __now += 1000/120; const batch=[...__frames.values()]; __frames.clear(); batch.forEach(callback=>callback(__now)); } };
+    window.__hidden = false; Object.defineProperty(document, 'hidden', { get: () => __hidden });
+    window.__listeners = []; const add = EventTarget.prototype.addEventListener, remove = EventTarget.prototype.removeEventListener;
+    EventTarget.prototype.addEventListener = function(type, listener, options) { __listeners.push({target:this,type,listener}); return add.call(this,type,listener,options); };
+    EventTarget.prototype.removeEventListener = function(type, listener, options) { __listeners=__listeners.filter(record=>!(record.target===this&&record.type===type&&record.listener===listener)); return remove.call(this,type,listener,options); };
+    window.__csp = []; document.addEventListener('securitypolicyviolation', event=>__csp.push(event.violatedDirective));
+    window.DeviceMotionEvent = class extends Event { static requestPermission() { return Promise.resolve('granted'); } };
+    window.DeviceOrientationEvent = class extends Event { static requestPermission() { return Promise.resolve('granted'); } };
+  ` });
+  await command('Page.navigate', { url: `${origin}/fixture` });
+  await waitFor('!!window.PendantSimulator && document.querySelectorAll(".pendant-simulator").length === 3 && __frames.size === 2');
+  assert.equal(await evaluate('document.querySelectorAll(".pendant-simulator [id]").length'), 0);
+  assert.deepEqual(await evaluate('({size:getComputedStyle(document.querySelector("#theme-heading")).fontSize,color:getComputedStyle(document.querySelector("#theme-heading")).color})'),
+    { size: '37px', color: 'rgb(1, 2, 3)' });
+  await evaluate('window.a=document.querySelector("#section").children[0];window.b=document.querySelector("#section").children[1]; __advance(20)');
+  assert.equal(await evaluate('a.querySelector("canvas").toDataURL() === b.querySelector("canvas").toDataURL()'), true);
+  const rect = await evaluate('a.querySelector("canvas").getBoundingClientRect().toJSON()');
+  const y = rect.y + rect.height * 0.75;
+  for (const [type, x, buttons] of [['mousePressed', rect.x + rect.width * 0.3, 1],
+    ['mouseMoved', rect.x + rect.width * 0.7, 1], ['mouseReleased', rect.x + rect.width * 0.7, 0]]) {
+    await command('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1 });
+  }
+  await evaluate('__advance(30)');
+  assert.equal(await evaluate('a.querySelector("canvas").toDataURL() !== b.querySelector("canvas").toDataURL()'), true);
+  await evaluate('a.querySelector("button").click()');
+  await waitFor('a.querySelector("button").getAttribute("aria-pressed") === "true"');
+  assert.equal(await evaluate('b.querySelector("button").getAttribute("aria-pressed")'), 'false');
+  assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 2);
+  await evaluate('window.oldCanvas=a.querySelector("canvas");window.dispose=PendantSimulator.mountSimulator(a);dispose();dispose()');
+  assert.equal(await evaluate('__frames.size'), 1);
+  assert.equal(await evaluate('oldCanvas.width'), 0);
+  assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 0);
+  await evaluate('PendantSimulator.mountSimulator(a)');
+  await waitFor('__frames.size === 2');
+  await evaluate(`new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/shopify/pendant-simulator.js?again';script.onload=resolve;script.onerror=reject;document.body.append(script)})`);
+  assert.equal(await evaluate('document.querySelectorAll(".pendant-simulator").length'), 3);
+  assert.equal(await evaluate('__listeners.filter(record=>record.type==="shopify:section:load").length'), 1);
+  await evaluate('document.querySelector("#section").dispatchEvent(new Event("shopify:section:unload",{bubbles:true}))');
+  assert.equal(await evaluate('__frames.size'), 0);
+  await evaluate('document.querySelector("#section").dispatchEvent(new Event("shopify:section:load",{bubbles:true}))');
+  await waitFor('__frames.size === 2');
+  await evaluate('window.otherCanvas=b.querySelector("canvas");a.dataset.heading="<img src=x onerror=alert(1)>";a.dataset.fillLevel="50"');
+  await waitFor('__frames.size === 2');
+  assert.equal(await evaluate('a.querySelector("h2").textContent'), '<img src=x onerror=alert(1)>');
+  assert.equal(await evaluate('a.querySelectorAll("img").length'), 0);
+  assert.equal(await evaluate('b.querySelector("canvas") === otherCanvas'), true);
+  await evaluate('__hidden=true;document.dispatchEvent(new Event("visibilitychange"))');
+  assert.equal(await evaluate('__frames.size'), 0);
+  await evaluate('__now+=60000;__hidden=false;document.dispatchEvent(new Event("visibilitychange"))');
+  await waitFor('__frames.size === 2');
+  await evaluate('window.dispatchEvent(new PageTransitionEvent("pagehide",{persisted:true}))');
+  assert.equal(await evaluate('__frames.size'), 0);
+  await evaluate('window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}));__advance(2)');
+  assert.equal(await evaluate('__frames.size'), 2);
+  await evaluate('window.scrollTo(0,document.body.scrollHeight)');
+  await waitFor('__frames.size === 1');
+  await evaluate('window.scrollTo(0,0)');
+  await waitFor('__frames.size === 2');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 900, deviceScaleFactor: 1, mobile: false });
+  await delay(100);
+  assert.ok(await evaluate('a.querySelector("canvas").getBoundingClientRect().width <= 320'));
+  const screenshot = await command('Page.captureScreenshot', { format: 'png' });
+  await writeFile('/tmp/pendant-shopify-smoke.png', Buffer.from(screenshot.data, 'base64'));
+  await evaluate('document.querySelector("#section").remove();document.querySelector("#below").remove()');
+  assert.equal(await evaluate('__frames.size'), 0);
+  assert.equal(await evaluate('__listeners.filter(record=>["visibilitychange","pagehide","pageshow","devicemotion","deviceorientation"].includes(record.type)).length'), 0);
+  // Like the editor's first Add block operation: HTML is inserted without
+  // executing a new script. The layout-loaded custom element must mount it.
+  await evaluate('document.body.insertAdjacentHTML("afterbegin",`<pendant-simulator data-particle-count="500"></pendant-simulator>`);window.scrollTo(0,0)');
+  await waitFor('document.querySelectorAll(".pendant-simulator").length === 1 && __frames.size === 1');
+  assert.deepEqual(await evaluate('__csp'), []);
+  await command('Page.navigate', { url: `${origin}/standalone` });
+  await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
+  assert.deepEqual(errors, []);
+  assert.deepEqual(await evaluate('__csp'), []);
+  // Use the same default Vite config as npm run dev, in addition to testing the
+  // production files above. The dev server is always closed by this harness.
+  const { createServer: createViteServer } = await import('vite');
+  devServer = await createViteServer({ logLevel: 'silent', server: { host: '127.0.0.1', port: 0 } });
+  await devServer.listen();
+  await command('Page.navigate', { url: devServer.resolvedUrls.local[0] });
+  await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
+  assert.deepEqual(errors, []);
+  console.log('Browser checks passed: independent canvases/stirring/sensors; idempotent mounts; cleanup; duplicate scripts; Shopify reloads; safe settings; offscreen/hidden pause; mobile layout; strict production CSP; standalone build and Vite development.');
+} finally {
+  await devServer?.close();
+  socket?.close();
+  if (browser && browser.exitCode === null) {
+    browser.kill('SIGTERM');
+    await once(browser, 'exit');
+  }
+  server.close();
+  await rm(temporary, { recursive: true, force: true });
+}

@@ -1,0 +1,17 @@
+{% content_for 'blocks' %}
+
+{% schema %}
+{
+  "name": "Pendant simulator",
+  "tag": "section",
+  "class": "pendant-simulator-section",
+  "enabled_on": { "templates": ["product"] },
+  "blocks": [{ "type": "@theme" }],
+  "presets": [
+    {
+      "name": "Pendant simulator",
+      "blocks": [{ "type": "pendant-simulator" }]
+    }
+  ]
+}
+{% endschema %}

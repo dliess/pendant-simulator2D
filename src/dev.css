@@ -1,0 +1,10 @@
+body {
+  margin: 0;
+  background: #101820;
+}
+
+#app {
+  min-height: 100vh;
+  display: grid;
+  align-items: center;
+}
