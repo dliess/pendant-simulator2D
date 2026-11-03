@@ -7,8 +7,8 @@ pendant-simulator {
   box-sizing: border-box;
   width: 100%;
   padding: 16px;
-  background: #101820;
-  color: white;
+  background: var(--pendant-background-color, #101820);
+  color: var(--pendant-text-color, white);
   font-family: system-ui, sans-serif;
   text-align: center;
   display: flex;
@@ -90,5 +90,5 @@ pendant-simulator {
 
 .pendant-simulator .pendant-simulator__motion-status {
   min-height: 3em;
-  color: #a6b4c4;
+  color: var(--pendant-status-color, #a6b4c4);
 }

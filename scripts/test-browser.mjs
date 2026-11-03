@@ -141,6 +141,28 @@ try {
     { size: '37px', color: 'rgb(1, 2, 3)' });
   await evaluate('window.a=document.querySelector("#section").children[0];window.b=document.querySelector("#section").children[1]; __advance(20)');
   assert.equal(await evaluate('a.querySelector("canvas").toDataURL() === b.querySelector("canvas").toDataURL()'), true);
+  assert.deepEqual(await evaluate('({background:getComputedStyle(a.querySelector(".pendant-simulator")).backgroundColor,text:getComputedStyle(a.querySelector(".pendant-simulator")).color})'),
+    { background: 'rgb(16, 24, 32)', text: 'rgb(255, 255, 255)' });
+  await evaluate('window.appearanceRoot=a.querySelector(".pendant-simulator");window.appearanceCanvas=a.querySelector("canvas");window.appearanceImage=appearanceCanvas.toDataURL();a.dataset.backgroundColor="#f6f0e5";a.dataset.textColor="#12233b"');
+  assert.deepEqual(await evaluate('({background:getComputedStyle(appearanceRoot).backgroundColor,text:getComputedStyle(appearanceRoot).color,status:getComputedStyle(a.querySelector("[role=status]")).color})'),
+    { background: 'rgb(246, 240, 229)', text: 'rgb(18, 35, 59)', status: 'rgb(18, 35, 59)' });
+  assert.equal(await evaluate('getComputedStyle(b.querySelector(".pendant-simulator")).backgroundColor'), 'rgb(16, 24, 32)');
+  assert.equal(await evaluate('a.querySelector("canvas")===appearanceCanvas && a.querySelector(".pendant-simulator")===appearanceRoot && appearanceCanvas.toDataURL()===appearanceImage'), true);
+  assert.equal(await evaluate('__frames.size'), 2);
+  await evaluate('a.dataset.backgroundColor="not-a-color";a.dataset.textColor="url(https://invalid.example/color)"');
+  assert.deepEqual(await evaluate('({background:getComputedStyle(appearanceRoot).backgroundColor,text:getComputedStyle(appearanceRoot).color})'),
+    { background: 'rgb(16, 24, 32)', text: 'rgb(255, 255, 255)' });
+  await evaluate('a.dataset.backgroundColor="rgba(246, 240, 229, 0.5)";a.dataset.textColor="#12233b"');
+  assert.equal(await evaluate('getComputedStyle(appearanceRoot).backgroundColor'), 'rgba(246, 240, 229, 0.5)');
+  await evaluate('a.dataset.transparentBackground="true";__advance(1)');
+  assert.equal(await evaluate('getComputedStyle(appearanceRoot).backgroundColor'), 'rgba(0, 0, 0, 0)');
+  assert.deepEqual(await evaluate('Array.from(appearanceCanvas.getContext("2d").getImageData(0,0,1,1).data)'), [0, 0, 0, 0]);
+  assert.deepEqual(await evaluate('Array.from(appearanceCanvas.getContext("2d").getImageData(200,35,1,1).data)'), [89, 101, 116, 255]);
+  assert.equal(await evaluate('b.querySelector("canvas").getContext("2d").getImageData(0,0,1,1).data[3]'), 255);
+  assert.equal(await evaluate('a.querySelector("canvas")===appearanceCanvas'), true);
+  await evaluate('a.dataset.transparentBackground="false";__advance(1)');
+  assert.equal(await evaluate('getComputedStyle(appearanceRoot).backgroundColor'), 'rgba(246, 240, 229, 0.5)');
+  assert.deepEqual(await evaluate('Array.from(appearanceCanvas.getContext("2d").getImageData(0,0,1,1).data)'), [8, 12, 18, 255]);
   const rect = await evaluate('a.querySelector("canvas").getBoundingClientRect().toJSON()');
   const y = rect.y + rect.height * 0.75;
   for (const [type, x, buttons] of [['mousePressed', rect.x + rect.width * 0.3, 1],
@@ -153,6 +175,9 @@ try {
   await waitFor('a.querySelector("button").getAttribute("aria-pressed") === "true"');
   assert.equal(await evaluate('b.querySelector("button").getAttribute("aria-pressed")'), 'false');
   assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 2);
+  await evaluate('a.dataset.backgroundColor="#f6f0e5";a.dataset.transparentBackground="true"');
+  assert.equal(await evaluate('a.querySelector("button").getAttribute("aria-pressed")'), 'true');
+  assert.equal(await evaluate('a.querySelector("canvas")===appearanceCanvas'), true);
   await evaluate('window.oldCanvas=a.querySelector("canvas");window.dispose=PendantSimulator.mountSimulator(a);dispose();dispose()');
   assert.equal(await evaluate('__frames.size'), 1);
   assert.equal(await evaluate('oldCanvas.width'), 0);
@@ -224,7 +249,7 @@ try {
   await command('Page.navigate', { url: devServer.resolvedUrls.local[0] });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: one CSS/JS load across repeated and dynamically added blocks; first insertion on an empty page; independent canvases/stirring/sensors; cleanup; Shopify reloads; strict CSP; mobile layout; standalone build and Vite development.');
+  console.log('Browser checks passed: per-block background/text colors and alpha; live style updates preserve canvas, motion and fluid state; invalid-color fallback; single asset loading; independent stirring/sensors; cleanup; editor reloads; CSP; mobile layout; standalone and Vite development.');
 } finally {
   await devServer?.close();
   socket?.close();

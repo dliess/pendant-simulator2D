@@ -73,8 +73,8 @@ under `dist/shopify-theme` for manual copying.
 
 Open the desired product template in **Online Store → Themes → Customize**, then
 choose **Add block → Pendant simulator** in an existing section that accepts native
-`@theme` blocks. Configure its heading, display width, fill height, particle count,
-and gravity strength. No standalone section, asset-loader snippet, layout edit,
+`@theme` blocks. Configure its heading, background color, text color, display width,
+fill height, particle count, and gravity strength. No standalone section, asset-loader snippet, layout edit,
 or template edit is required. Sections that only support their own local block
 types cannot accept an arbitrary native theme block; this deployment does not
 modify existing sections to add support.
@@ -123,8 +123,18 @@ and motion permission/status controls. Optional `data-*` settings use the same
 values as the Liquid block; `data-fill-level` is a percentage of initial fill
 height, not an area fraction.
 
+Background and text colors are per-instance settings. The default background is
+`#101820`, with white text and a muted status message. Enable **Transparent
+background** to expose the theme behind both the block panel and the canvas
+outside the circular pendant. Turning it off restores the selected background
+color and the original canvas background. The circular housing and LED display
+keep their colors. Use a text color that contrasts with the theme behind the
+transparent block. Appearance changes update in place, preserving the current fluid state,
+pointer handlers, and motion permissions.
+
 The `pendant-simulator` custom element mounts on connection and cleans up on
-disconnection. Attribute updates remount only that instance. Shopify section
+disconnection. Appearance updates change only styles; other attribute updates
+remount only that instance. Shopify section
 load/unload events also mount and dispose the affected elements. This handles
 editor block removal, replacement, and reordering, including when HTML is replaced
 without an editor event.

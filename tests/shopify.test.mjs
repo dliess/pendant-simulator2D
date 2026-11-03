@@ -24,9 +24,16 @@ test('native theme block exposes configurable settings and editor identity witho
   const bootstrap = liquid.match(/{% javascript %}([\s\S]*?){% endjavascript %}/)[1];
   assert.doesNotMatch(bootstrap, /{{|{%/);
   new Script(bootstrap);
-  for (const id of ['heading', 'show_heading', 'display_width', 'particle_count', 'fill_level', 'gravity_strength']) {
+  for (const id of ['heading', 'show_heading', 'transparent_background', 'background_color', 'text_color', 'display_width', 'particle_count', 'fill_level', 'gravity_strength']) {
     assert.ok(block.settings.some(setting => setting.id === id), `missing ${id}`);
   }
+  assert.deepEqual(block.settings.filter(setting => setting.type === 'color').map(setting => [setting.id, setting.default]),
+    [['background_color', '#101820'], ['text_color', '#ffffff']]);
+  assert.match(liquid, /data-background-color="{{ block\.settings\.background_color \| default: '#101820' \| escape }}"/);
+  assert.match(liquid, /data-text-color="{{ block\.settings\.text_color \| default: '#ffffff' \| escape }}"/);
+  assert.equal(block.settings.find(setting => setting.id === 'transparent_background').type, 'checkbox');
+  assert.equal(block.settings.find(setting => setting.id === 'transparent_background').default, false);
+  assert.match(liquid, /data-transparent-background="{{ block\.settings\.transparent_background }}"/);
   for (const setting of block.settings.filter(setting => setting.type === 'range')) {
     assert.ok(setting.default >= setting.min && setting.default <= setting.max);
     assert.equal((setting.default - setting.min) % setting.step, 0);

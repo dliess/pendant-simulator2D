@@ -22,6 +22,22 @@ function numberSetting(value: string | undefined, fallback: number, min: number,
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
 }
 
+/** Apply visual settings without replacing an instance or resetting its fluid. */
+export function updateSimulatorAppearance(container: HTMLElement) {
+  const root = container.querySelector<HTMLElement>(':scope > .pendant-simulator');
+  const view = container.ownerDocument.defaultView;
+  if (!root || !view) return;
+  const color = (value: string | undefined, fallback: string) =>
+    value && view.CSS.supports('color', value) ? value : fallback;
+  const background = container.dataset.transparentBackground === 'true'
+    ? 'transparent' : color(container.dataset.backgroundColor, '#101820');
+  const foreground = color(container.dataset.textColor, '#ffffff');
+  root.style.setProperty('--pendant-background-color', background);
+  root.style.setProperty('--pendant-text-color', foreground);
+  root.style.setProperty('--pendant-status-color',
+    foreground.toLowerCase() === '#ffffff' ? '#a6b4c4' : foreground);
+}
+
 /** Mount one independent simulator. Repeated mounts return its existing cleanup. */
 export function mountSimulator(container: HTMLElement): () => void {
   const host = container as SimulatorContainer;
@@ -218,14 +234,13 @@ export function mountSimulator(container: HTMLElement): () => void {
   // --------------------------------------------------
 
   function render() {
-    // Background
-    ctx.fillStyle = '#080c12';
-    ctx.fillRect(
-      0,
-      0,
-      CANVAS_SIZE,
-      CANVAS_SIZE
-    );
+    // Clear the previous frame so transparent mode exposes the theme behind the
+    // round housing without changing the housing, display, or LED colors.
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    if (container.dataset.transparentBackground !== 'true') {
+      ctx.fillStyle = '#080c12';
+      ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    }
 
     // Metallic pendant housing
     ctx.beginPath();
@@ -377,6 +392,7 @@ export function mountSimulator(container: HTMLElement): () => void {
 
   host[instanceKey] = cleanup;
   container.append(root);
+  updateSimulatorAppearance(container);
   render();
   observer?.observe(container);
   schedule();
