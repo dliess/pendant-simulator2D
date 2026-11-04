@@ -123,6 +123,9 @@ Different elements have independent fluid state, canvas, drag capture, animation
 and motion permission/status controls. Optional `data-*` settings use the same
 values as the Liquid block; `data-fill-level` is a percentage of initial fill
 height, not an area fraction.
+The **Particle count** dropdown offers 500 to 10,000 in 500-particle increments,
+with a default of 2,000. A dropdown supports values beyond Shopify's range-slider
+maximum, which must be below 10,000. Standalone mounts accept the same limits.
 
 Background and text colors are per-instance settings. The default background is
 `#101820`, with white text and a muted status message. Enable **Transparent

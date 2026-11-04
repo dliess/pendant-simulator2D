@@ -81,7 +81,7 @@ export function mountSimulator(container: HTMLElement): () => void {
   const view = doc.defaultView;
   if (!view) throw new Error('The simulator needs a browser window');
 
-  const particleCount = Math.round(numberSetting(container.dataset.particleCount, 2000, 500, 3000));
+  const particleCount = Math.round(numberSetting(container.dataset.particleCount, 2000, 500, 10000));
   const fillLevel = numberSetting(container.dataset.fillLevel, 30, 10, 90) / 100;
   const gravityStrength = numberSetting(container.dataset.gravityStrength, 14, 1, 30);
   const width = numberSetting(container.dataset.displayWidth, 400, 200, 800);
