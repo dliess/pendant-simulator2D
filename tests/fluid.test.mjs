@@ -112,6 +112,53 @@ test('small detached clusters follow gravity without pressure kicks or particle 
   assert.equal(sim.particles.length, 2000);
 });
 
+test('compact detached drops fall freely even when their marker count exceeds the bulk threshold', () => {
+  for (const particleCount of [500, 1000, 2000, 3000]) {
+    for (const dropCount of [8, 12, 20]) {
+      const sim = new FluidSimulation(1, particleCount);
+      const starts = Array.from({ length: dropCount }, (_, k) => ({
+        x: (k % 4 - 1.5) * 0.005,
+        y: -0.5 + Math.floor(k / 4) * 0.005,
+        vx: 0.2, vy: -0.1,
+      }));
+      starts.forEach((start, k) => Object.assign(sim.particles[k], start));
+      sim.setGravity(4, 14);
+      const steps = 15, dt = 1 / 120;
+      advance(sim, steps);
+      const elapsed = steps * dt;
+      starts.forEach((start, k) => {
+        const p = sim.particles[k];
+        const label = JSON.stringify({ particleCount, dropCount, k, p });
+        assert.ok(Math.abs(p.vx - start.vx - 4 * steps * dt) < 1e-10, label);
+        assert.ok(Math.abs(p.vy - start.vy - 14 * steps * dt) < 1e-10, label);
+        // Other particles may trigger smaller CFL substeps. Semi-implicit Euler
+        // stays between the analytic trajectory and its maximum-step error bound.
+        const xError = p.x - start.x - start.vx * elapsed - 0.5 * 4 * elapsed * elapsed;
+        const yError = p.y - start.y - start.vy * elapsed - 0.5 * 14 * elapsed * elapsed;
+        assert.ok(xError >= -1e-10 && xError <= 0.5 * 4 * elapsed * dt + 1e-10, label);
+        assert.ok(yError >= -1e-10 && yError <= 0.5 * 14 * elapsed * dt + 1e-10, label);
+      });
+      assert.equal(sim.particles.length, particleCount);
+    }
+  }
+});
+
+test('compact drops return to the pool without losing particles or remaining aloft', () => {
+  for (const particleCount of [500, 2000]) {
+    const sim = new FluidSimulation(1, particleCount);
+    sim.setGravity(0, 14);
+    const drops = sim.particles.slice(0, 20);
+    drops.forEach((p, k) => Object.assign(p, {
+      x: (k % 4 - 1.5) * 0.005, y: -0.5 + Math.floor(k / 4) * 0.005, vx: 0, vy: 0,
+    }));
+    advance(sim, 600);
+    assert.equal(sim.particles.length, particleCount);
+    assert.ok(drops.every(p => p.y > 0.15), JSON.stringify(drops));
+    assert.equal(sim.particles.filter(p => p.y < 0.15).length, 0);
+    measure(sim);
+  }
+});
+
 test('non-unit containers use the correct grid coordinates and boundaries', () => {
   for (const radius of [0.5, 2]) {
     const sim = new FluidSimulation(radius);

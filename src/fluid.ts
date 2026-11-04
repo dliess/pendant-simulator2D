@@ -44,6 +44,8 @@ export class FluidSimulation {
   private readonly vBlocked: Uint8Array;
   private readonly cellParticleCounts: Uint32Array;
   private readonly ballistic: Uint8Array;
+  private readonly componentCells: Uint16Array;
+  private readonly componentQueue: Int32Array;
 
   constructor(
     radius = 1,
@@ -78,6 +80,8 @@ export class FluidSimulation {
     this.vBlocked = new Uint8Array(this.v.length);
     this.cellParticleCounts = new Uint32Array(n * n);
     this.ballistic = new Uint8Array(particleCount);
+    this.componentCells = new Uint16Array(n * n);
+    this.componentQueue = new Int32Array(n * n);
 
     // Mark cells outside the circular container as solid.
     for (let j = 0; j < n; j++) {
@@ -312,6 +316,33 @@ export class FluidSimulation {
       this.cellParticleCounts[this.cell(i, j)]++;
     }
 
+    // A tightly packed drop can have many markers but still occupy too few
+    // cells to resolve a pressure field. Count face-connected occupied cells,
+    // rather than mistaking marker density alone for a supported liquid volume.
+    this.componentCells.fill(0);
+    for (let seed = 0; seed < this.componentCells.length; seed++) {
+      if (!this.cellParticleCounts[seed] || this.solid[seed] || this.componentCells[seed]) continue;
+      let size = 1;
+      this.componentQueue[0] = seed;
+      this.componentCells[seed] = 0xffff;
+      for (let head = 0; head < size; head++) {
+        const index = this.componentQueue[head];
+        const i = index % this.n;
+        const j = Math.floor(index / this.n);
+        for (let direction = 0; direction < 4; direction++) {
+          const neighbor = direction === 0 ? (i > 0 ? index - 1 : -1) :
+            direction === 1 ? (i + 1 < this.n ? index + 1 : -1) :
+            direction === 2 ? (j > 0 ? index - this.n : -1) :
+            (j + 1 < this.n ? index + this.n : -1);
+          if (neighbor < 0 || !this.cellParticleCounts[neighbor] || this.solid[neighbor]
+            || this.componentCells[neighbor]) continue;
+          this.componentCells[neighbor] = 0xffff;
+          this.componentQueue[size++] = neighbor;
+        }
+      }
+      for (let k = 0; k < size; k++) this.componentCells[this.componentQueue[k]] = size;
+    }
+
     // A few detached markers do not resolve a liquid volume on this grid.
     // Let these drops follow gravity instead of giving them grid pressure and
     // interpolated wall support. They rejoin the pressure solve in the pool.
@@ -328,7 +359,7 @@ export class FluidSimulation {
           count += this.cellParticleCounts[this.cell(x, y)];
         }
       }
-      this.ballistic[k] = Number(count < minNeighbors);
+      this.ballistic[k] = Number(count < minNeighbors || this.componentCells[this.cell(i, j)] < 9);
       if (this.ballistic[k]) continue;
 
       this.splat(
