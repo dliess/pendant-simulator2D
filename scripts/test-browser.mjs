@@ -202,7 +202,7 @@ try {
   // Sample LED centers, avoiding antialiased edges. Every core must be
   // either the unchanged display background or the full selected opaque color.
   await evaluate(`window.ledStates=(canvas,color)=>{
-    const context=canvas.getContext('2d'),lit=color==='green'?[0,255,110,255]:[0,190,255,255];
+    const context=canvas.getContext('2d'),lit=color==='green'?[130,255,175,255]:[100,220,255,255];
     let on=0,off=0,shape=null;const invalid=[];
     for(let y=0;y<16;y++)for(let x=0;x<16;x++){
       const dx=x-7.5,dy=y-7.5;if(Math.hypot(dx,dy)>7.6)continue;
@@ -210,7 +210,8 @@ try {
       if(pixel.every((value,k)=>value===lit[k])){
         on++;
         if(!shape){const at=(ox,oy)=>Array.from(context.getImageData(Math.floor(200+dx*19+ox),Math.floor(200+dy*19+oy),1,1).data);
-          shape={vertical:at(0,5),horizontal:at(5,0),corner:at(4,5),inside:at(3,4)};}
+          shape={vertical:at(0,5),horizontal:at(5,0),corner:at(4,5),inside:at(3,4),
+            glowNear:at(0,-8),glowFar:at(0,-12),glowOutside:at(0,-17)};}
       }
       else if(pixel.every((value,k)=>value===[2,7,11,255][k]))off++;
       else invalid.push(pixel);
@@ -220,11 +221,17 @@ try {
     const states=await evaluate(`ledStates(appearanceCanvas,${JSON.stringify(color)})`);
     assert.deepEqual(states.invalid, [], 'LED cores must never have intermediate brightness');
     assert.ok(states.on > 0 && states.off > 0, JSON.stringify(states));
-    const full=color==='green'?[0,255,110,255]:[0,190,255,255];
+    const full=color==='green'?[130,255,175,255]:[100,220,255,255];
     assert.deepEqual(states.shape.vertical,full,'rounded LEDs extend further vertically');
     assert.notDeepEqual(states.shape.horizontal,full,'rounded LEDs are narrower than they are tall');
     assert.deepEqual(states.shape.inside,full,'the rectangular interior stays fully lit');
     assert.notDeepEqual(states.shape.corner,full,'the outer corners are rounded');
+    const channel=color==='green'?1:2;
+    assert.ok(states.shape.glowNear[channel]>states.shape.glowFar[channel],JSON.stringify(states.shape));
+    assert.ok(states.shape.glowNear[channel]>=100,'the halo is visibly bright near the LED');
+    assert.ok(states.shape.glowFar[channel]>=25,'the wider halo remains visible farther from the LED');
+    assert.ok(states.shape.glowFar[channel]>states.shape.glowOutside[channel],'the soft halo fades outward');
+    assert.deepEqual(states.shape.glowOutside,[2,7,11,255],'neighboring unlit LED cores remain dark');
   }
   assert.equal(await evaluate('appearanceCanvas.toDataURL() === b.querySelector("canvas").toDataURL()'), true);
   await command('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 1, mobile: false });

@@ -154,7 +154,11 @@ makes the ring transparent while keeping the dark LED display visible. To expose
 the theme behind the ring, also enable **Transparent background**; otherwise the
 block's background shows through. **LED color** selects blue (default) or green,
 including the LED glow. LEDs switch fully on or off based on local fluid density.
-Lit cores use the full selected color with a fixed glow; unlit LEDs emit no light.
+Lit cores use a brighter, fixed blue or green color. A strong, soft glow combines
+a tight halo and a wider bloom that add light where they overlap. The glow stays
+inside the circular display. Unlit LED cores remain dark even beside lit LEDs.
+Cached glow sprites keep the blur work out of the animation loop, and all halos
+render before the crisp cores, preserving the full on/off behavior.
 Each LED is a rounded rectangle, 12 units tall and 9 units wide (height:width 4:3),
 with a matching rounded rectangular glow. Both scale with the pendant.
 

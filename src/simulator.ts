@@ -13,6 +13,7 @@ const LED_WIDTH = 9;
 const LED_HEIGHT = 12;
 const LED_CORNER_RADIUS = 2;
 const LED_ON_DENSITY = 3;
+const LED_GLOW_SIZE = 48;
 const FIXED_DT = 1 / 120;
 const MAX_STEPS_PER_FRAME = 6;
 
@@ -106,6 +107,10 @@ export function mountSimulator(container: HTMLElement): () => void {
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas rendering is unavailable');
   const ctx: CanvasRenderingContext2D = context;
+  const glowCanvas = doc.createElement('canvas');
+  glowCanvas.width = glowCanvas.height = LED_GLOW_SIZE;
+  const glowContext = glowCanvas.getContext('2d');
+  let cachedGlowColor = '';
   const motionButton = root.querySelector<HTMLButtonElement>('button')!;
   const motionStatus = root.querySelector<HTMLParagraphElement>('[role="status"]')!;
   const hint = root.querySelector<HTMLParagraphElement>('.pendant-simulator__hint')!;
@@ -210,6 +215,7 @@ export function mountSimulator(container: HTMLElement): () => void {
   interface LED {
     x: number;
     y: number;
+    on: boolean;
   }
 
   const leds: LED[] = [];
@@ -226,7 +232,8 @@ export function mountSimulator(container: HTMLElement): () => void {
 
       leds.push({
         x: dx * LED_SPACING / DISPLAY_RADIUS,
-        y: dy * LED_SPACING / DISPLAY_RADIUS
+        y: dy * LED_SPACING / DISPLAY_RADIUS,
+        on: false,
       });
     }
   }
@@ -323,26 +330,38 @@ export function mountSimulator(container: HTMLElement): () => void {
   // Rendering
   // --------------------------------------------------
 
-  function drawLED(x: number, y: number, scale: number, color: string) {
+  function drawLED(x: number, y: number, scale: number, color: string, target = ctx) {
     const left = x - LED_WIDTH * scale / 2;
     const right = x + LED_WIDTH * scale / 2;
     const top = y - LED_HEIGHT * scale / 2;
     const bottom = y + LED_HEIGHT * scale / 2;
     const corner = LED_CORNER_RADIUS * scale;
     // Explicit curves keep rounded LEDs available in the Safari 14 build target.
-    ctx.beginPath();
-    ctx.moveTo(left + corner, top);
-    ctx.lineTo(right - corner, top);
-    ctx.quadraticCurveTo(right, top, right, top + corner);
-    ctx.lineTo(right, bottom - corner);
-    ctx.quadraticCurveTo(right, bottom, right - corner, bottom);
-    ctx.lineTo(left + corner, bottom);
-    ctx.quadraticCurveTo(left, bottom, left, bottom - corner);
-    ctx.lineTo(left, top + corner);
-    ctx.quadraticCurveTo(left, top, left + corner, top);
-    ctx.closePath();
-    ctx.fillStyle = color;
-    ctx.fill();
+    target.beginPath();
+    target.moveTo(left + corner, top);
+    target.lineTo(right - corner, top);
+    target.quadraticCurveTo(right, top, right, top + corner);
+    target.lineTo(right, bottom - corner);
+    target.quadraticCurveTo(right, bottom, right - corner, bottom);
+    target.lineTo(left + corner, bottom);
+    target.quadraticCurveTo(left, bottom, left, bottom - corner);
+    target.lineTo(left, top + corner);
+    target.quadraticCurveTo(left, top, left + corner, top);
+    target.closePath();
+    target.fillStyle = color;
+    target.fill();
+  }
+
+  function prepareGlow(color: string) {
+    if (!glowContext || cachedGlowColor === color) return;
+    // Blur once per color change, then reuse the small transparent sprite.
+    glowContext.clearRect(0, 0, LED_GLOW_SIZE, LED_GLOW_SIZE);
+    glowContext.shadowColor = `rgb(${color})`;
+    glowContext.shadowBlur = 16;
+    drawLED(LED_GLOW_SIZE / 2, LED_GLOW_SIZE / 2, 1.35, `rgba(${color}, 0.95)`, glowContext);
+    glowContext.shadowBlur = 7;
+    drawLED(LED_GLOW_SIZE / 2, LED_GLOW_SIZE / 2, 1.1, `rgba(${color}, 0.9)`, glowContext);
+    cachedGlowColor = color;
   }
 
   function render() {
@@ -384,10 +403,17 @@ export function mountSimulator(container: HTMLElement): () => void {
     ctx.fill();
 
     const green = container.dataset.ledColor === 'green';
-    const glowColor = green ? '0, 190, 80' : '0, 140, 255';
-    const coreColor = green ? '0, 255, 110' : '0, 190, 255';
+    const glowColor = green ? '0, 255, 110' : '0, 190, 255';
+    const coreColor = green ? '130, 255, 175' : '100, 220, 255';
+    prepareGlow(glowColor);
 
-    // Render LED matrix
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(CENTER, CENTER, DISPLAY_RADIUS, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Draw all halos first so neighboring glows cannot dim the opaque cores.
     for (const led of leds) {
       const density = sampleDensity(
         led.x,
@@ -395,7 +421,8 @@ export function mountSimulator(container: HTMLElement): () => void {
       );
 
       // Switch the LED at a fixed occupancy threshold; empty LEDs emit no light.
-      if (density < LED_ON_DENSITY) continue;
+      led.on = density >= LED_ON_DENSITY;
+      if (!led.on) continue;
 
       const px =
         CENTER + led.x * DISPLAY_RADIUS;
@@ -403,12 +430,16 @@ export function mountSimulator(container: HTMLElement): () => void {
       const py =
         CENTER + led.y * DISPLAY_RADIUS;
 
-      // LED glow
-      drawLED(px, py, 1.8, `rgba(${glowColor}, 0.12)`);
-
-      // LED core
-      drawLED(px, py, 1, `rgb(${coreColor})`);
+      if (glowContext) ctx.drawImage(glowCanvas, px - LED_GLOW_SIZE / 2, py - LED_GLOW_SIZE / 2);
+      else drawLED(px, py, 1.8, `rgba(${glowColor}, 0.45)`);
     }
+    ctx.globalCompositeOperation = 'source-over';
+    for (const led of leds) {
+      // Keep off LEDs dark even where the wider halo from a neighbor overlaps.
+      drawLED(CENTER + led.x * DISPLAY_RADIUS, CENTER + led.y * DISPLAY_RADIUS,
+        1, led.on ? `rgb(${coreColor})` : '#02070b');
+    }
+    ctx.restore();
   }
 
 
@@ -500,6 +531,7 @@ export function mountSimulator(container: HTMLElement): () => void {
     fluid = null;
     leds.length = 0;
     canvas.width = canvas.height = 0;
+    glowCanvas.width = glowCanvas.height = 0;
     root.remove();
     delete host[instanceKey];
     delete host[motionControlsKey];
