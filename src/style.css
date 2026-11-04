@@ -1,12 +1,14 @@
 pendant-simulator {
   display: block;
+  min-width: 0;
   width: 100%;
 }
 
 .pendant-simulator {
   box-sizing: border-box;
+  min-width: 0;
   width: 100%;
-  padding: 16px;
+  padding: var(--pendant-padding, 16px);
   background: var(--pendant-background-color, #101820);
   color: var(--pendant-text-color, white);
   font-family: system-ui, sans-serif;
@@ -36,10 +38,11 @@ pendant-simulator {
 
 .pendant-simulator .pendant-simulator__canvas {
   display: block;
-  width: min(100%, var(--pendant-display-width, 400px));
+  width: min(100%, calc(var(--pendant-display-width, 400px) * var(--pendant-radius-scale, 1)));
   max-width: 100%;
   height: auto;
   aspect-ratio: 1;
+  transform: translateY(var(--pendant-offset-y, 0px));
   border: 0;
   touch-action: none;
   cursor: grab;
@@ -47,6 +50,10 @@ pendant-simulator {
 
 .pendant-simulator .pendant-simulator__canvas:active {
   cursor: grabbing;
+}
+
+.pendant-simulator[data-size-mode='container'] .pendant-simulator__canvas {
+  width: 100%;
 }
 
 .pendant-simulator .pendant-simulator__hint,

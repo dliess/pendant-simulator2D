@@ -7,10 +7,17 @@
 <pendant-simulator
   data-heading="{{ block.settings.heading | escape }}"
   data-show-heading="{{ block.settings.show_heading }}"
+  data-show-motion-controls="{{ block.settings.show_motion_controls }}"
   data-transparent-background="{{ block.settings.transparent_background }}"
   data-background-color="{{ block.settings.background_color | default: '#101820' | escape }}"
   data-text-color="{{ block.settings.text_color | default: '#ffffff' | escape }}"
   data-display-width="{{ block.settings.display_width }}"
+  data-size-mode="{{ block.settings.size_mode | default: 'fixed' | escape }}"
+  data-container-padding="{{ block.settings.container_padding | default: 4 }}"
+  data-vertical-offset="{{ block.settings.vertical_offset | default: 0 }}"
+  data-show-housing="{{ block.settings.show_housing }}"
+  data-led-color="{{ block.settings.led_color | default: 'blue' | escape }}"
+  data-radius-scale="{{ block.settings.radius_scale | default: 100 }}"
   data-particle-count="{{ block.settings.particle_count }}"
   data-fill-level="{{ block.settings.fill_level }}"
   data-gravity-strength="{{ block.settings.gravity_strength }}"
@@ -86,6 +93,13 @@
     },
     {
       "type": "checkbox",
+      "id": "show_motion_controls",
+      "label": "Show phone motion controls",
+      "default": true,
+      "info": "Show the Enable phone motion button and its status text."
+    },
+    {
+      "type": "checkbox",
       "id": "transparent_background",
       "label": "Transparent background",
       "default": false,
@@ -106,6 +120,56 @@
       "info": "Choose a contrasting color for the heading, instructions, and status."
     },
     {
+      "type": "checkbox",
+      "id": "show_housing",
+      "label": "Show gray housing",
+      "default": true,
+      "info": "Turn off to make the gray ring transparent. The dark LED display stays visible."
+    },
+    {
+      "type": "select",
+      "id": "led_color",
+      "label": "LED color",
+      "options": [
+        { "value": "blue", "label": "Blue" },
+        { "value": "green", "label": "Green" }
+      ],
+      "default": "blue"
+    },
+    {
+      "type": "select",
+      "id": "size_mode",
+      "label": "Size mode",
+      "options": [
+        { "value": "fixed", "label": "Set display size" },
+        { "value": "container", "label": "Adapt to container" }
+      ],
+      "default": "fixed"
+    },
+    {
+      "type": "range",
+      "id": "container_padding",
+      "label": "Container padding",
+      "min": 0,
+      "max": 40,
+      "step": 1,
+      "unit": "%",
+      "default": 4,
+      "info": "Padding on each side as a percentage of the block's width. The pendant fills the remaining width.",
+      "visible_if": "{{ block.settings.size_mode == 'container' }}"
+    },
+    {
+      "type": "range",
+      "id": "vertical_offset",
+      "label": "Vertical center offset",
+      "min": -10,
+      "max": 10,
+      "step": 1,
+      "unit": "%",
+      "default": 0,
+      "info": "Percentage of the simulator block's height. Negative moves up; positive moves down. Heading and controls stay in place."
+    },
+    {
       "type": "range",
       "id": "display_width",
       "label": "Maximum display width",
@@ -113,7 +177,20 @@
       "max": 800,
       "step": 20,
       "unit": "px",
-      "default": 400
+      "default": 400,
+      "visible_if": "{{ block.settings.size_mode != 'container' }}"
+    },
+    {
+      "type": "range",
+      "id": "radius_scale",
+      "label": "Pendant radius",
+      "min": 50,
+      "max": 150,
+      "step": 5,
+      "unit": "%",
+      "default": 100,
+      "info": "Scales the pendant relative to Maximum display width. Shrinks to fit smaller screens.",
+      "visible_if": "{{ block.settings.size_mode != 'container' }}"
     },
     {
       "type": "range",

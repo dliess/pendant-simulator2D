@@ -24,7 +24,7 @@ test('native theme block exposes configurable settings and editor identity witho
   const bootstrap = liquid.match(/{% javascript %}([\s\S]*?){% endjavascript %}/)[1];
   assert.doesNotMatch(bootstrap, /{{|{%/);
   new Script(bootstrap);
-  for (const id of ['heading', 'show_heading', 'transparent_background', 'background_color', 'text_color', 'display_width', 'particle_count', 'fill_level', 'gravity_strength', 'react_to_scrolling']) {
+  for (const id of ['heading', 'show_heading', 'show_motion_controls', 'transparent_background', 'background_color', 'text_color', 'show_housing', 'led_color', 'radius_scale', 'size_mode', 'container_padding', 'display_width', 'particle_count', 'fill_level', 'gravity_strength', 'react_to_scrolling']) {
     assert.ok(block.settings.some(setting => setting.id === id), `missing ${id}`);
   }
   assert.deepEqual(block.settings.filter(setting => setting.type === 'color').map(setting => [setting.id, setting.default]),
@@ -37,6 +37,38 @@ test('native theme block exposes configurable settings and editor identity witho
   assert.equal(block.settings.find(setting => setting.id === 'react_to_scrolling').type, 'checkbox');
   assert.equal(block.settings.find(setting => setting.id === 'react_to_scrolling').default, true);
   assert.match(liquid, /data-react-to-scrolling="{{ block\.settings\.react_to_scrolling }}"/);
+  assert.equal(block.settings.find(setting => setting.id === 'show_motion_controls').type, 'checkbox');
+  assert.equal(block.settings.find(setting => setting.id === 'show_motion_controls').default, true);
+  assert.match(liquid, /data-show-motion-controls="{{ block\.settings\.show_motion_controls }}"/);
+  assert.equal(block.settings.find(setting => setting.id === 'show_housing').type, 'checkbox');
+  assert.equal(block.settings.find(setting => setting.id === 'show_housing').default, true);
+  assert.match(liquid, /data-show-housing="{{ block\.settings\.show_housing }}"/);
+  const ledColor = block.settings.find(setting => setting.id === 'led_color');
+  assert.equal(ledColor.type, 'select');
+  assert.equal(ledColor.default, 'blue');
+  assert.deepEqual(ledColor.options.map(option => option.value), ['blue', 'green']);
+  assert.match(liquid, /data-led-color="{{ block\.settings\.led_color \| default: 'blue' \| escape }}"/);
+  const radius = block.settings.find(setting => setting.id === 'radius_scale');
+  assert.equal(radius.type, 'range');
+  assert.deepEqual([radius.min, radius.max, radius.step, radius.default, radius.unit], [50, 150, 5, 100, '%']);
+  assert.match(liquid, /data-radius-scale="{{ block\.settings\.radius_scale \| default: 100 }}"/);
+  const mode = block.settings.find(setting => setting.id === 'size_mode');
+  assert.equal(mode.type, 'select');
+  assert.equal(mode.default, 'fixed');
+  assert.deepEqual(mode.options.map(option => option.value), ['fixed', 'container']);
+  assert.match(liquid, /data-size-mode="{{ block\.settings\.size_mode \| default: 'fixed' \| escape }}"/);
+  const padding = block.settings.find(setting => setting.id === 'container_padding');
+  assert.equal(padding.type, 'range');
+  assert.deepEqual([padding.min, padding.max, padding.step, padding.default, padding.unit], [0, 40, 1, 4, '%']);
+  assert.equal(padding.visible_if, "{{ block.settings.size_mode == 'container' }}");
+  for (const id of ['display_width', 'radius_scale']) {
+    assert.equal(block.settings.find(setting => setting.id === id).visible_if, "{{ block.settings.size_mode != 'container' }}");
+  }
+  assert.match(liquid, /data-container-padding="{{ block\.settings\.container_padding \| default: 4 }}"/);
+  const offset = block.settings.find(setting => setting.id === 'vertical_offset');
+  assert.equal(offset.type, 'range');
+  assert.deepEqual([offset.min, offset.max, offset.step, offset.default, offset.unit], [-10, 10, 1, 0, '%']);
+  assert.match(liquid, /data-vertical-offset="{{ block\.settings\.vertical_offset \| default: 0 }}"/);
   for (const setting of block.settings.filter(setting => setting.type === 'range')) {
     assert.ok(setting.default >= setting.min && setting.default <= setting.max);
     assert.equal((setting.default - setting.min) % setting.step, 0);

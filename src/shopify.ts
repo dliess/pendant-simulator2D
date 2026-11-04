@@ -13,7 +13,8 @@ if (!customElements.get(tag)) {
       return ['data-heading', 'data-show-heading', 'data-display-width',
         'data-particle-count', 'data-fill-level', 'data-gravity-strength',
         'data-background-color', 'data-text-color', 'data-transparent-background',
-        'data-react-to-scrolling'];
+        'data-react-to-scrolling', 'data-show-housing', 'data-led-color', 'data-radius-scale',
+        'data-show-motion-controls', 'data-size-mode', 'data-container-padding', 'data-vertical-offset'];
     }
 
     connectedCallback() { mountSimulator(this); }
@@ -23,7 +24,10 @@ if (!customElements.get(tag)) {
       if (!this.isConnected || oldValue === newValue) return;
       // The frame loop reads this input setting live, preserving fluid and sensors.
       if (name === 'data-react-to-scrolling') return;
-      if (name === 'data-background-color' || name === 'data-text-color' || name === 'data-transparent-background') {
+      if (name === 'data-background-color' || name === 'data-text-color' || name === 'data-transparent-background'
+        || name === 'data-show-housing' || name === 'data-led-color' || name === 'data-radius-scale'
+        || name === 'data-heading' || name === 'data-show-heading' || name === 'data-show-motion-controls'
+        || name === 'data-size-mode' || name === 'data-container-padding' || name === 'data-vertical-offset') {
         updateSimulatorAppearance(this);
         return;
       }

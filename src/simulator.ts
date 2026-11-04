@@ -23,6 +23,15 @@ function numberSetting(value: string | undefined, fallback: number, min: number,
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
 }
 
+function updateVerticalOffset(container: HTMLElement, root: HTMLElement) {
+  const percent = numberSetting(container.dataset.verticalOffset, 0, -10, 10);
+  // CSS translateY(%) refers to the canvas itself. Use the enclosing block's
+  // untransformed border-box height instead; translation does not change layout.
+  const height = percent === 0 ? 0 :
+    parseFloat(root.ownerDocument.defaultView!.getComputedStyle(root).height) || root.offsetHeight;
+  root.style.setProperty('--pendant-offset-y', `${height * percent / 100}px`);
+}
+
 /** Apply visual settings without replacing an instance or resetting its fluid. */
 export function updateSimulatorAppearance(container: HTMLElement) {
   const root = container.querySelector<HTMLElement>(':scope > .pendant-simulator');
@@ -37,6 +46,28 @@ export function updateSimulatorAppearance(container: HTMLElement) {
   root.style.setProperty('--pendant-text-color', foreground);
   root.style.setProperty('--pendant-status-color',
     foreground.toLowerCase() === '#ffffff' ? '#a6b4c4' : foreground);
+  root.style.setProperty('--pendant-radius-scale',
+    String(numberSetting(container.dataset.radiusScale, 100, 50, 150) / 100));
+  const adaptToContainer = container.dataset.sizeMode === 'container';
+  root.dataset.sizeMode = adaptToContainer ? 'container' : 'fixed';
+  root.style.setProperty('--pendant-padding',
+    adaptToContainer ? `${numberSetting(container.dataset.containerPadding, 4, 0, 40)}%` : '16px');
+
+  const headingText = container.dataset.heading ?? 'FLIP Fluid Pendant Simulator';
+  let heading = root.querySelector<HTMLHeadingElement>('.pendant-simulator__heading');
+  if (container.dataset.showHeading === 'false' || headingText.trim() === '') {
+    heading?.remove();
+  } else {
+    if (!heading) {
+      heading = container.ownerDocument.createElement('h2');
+      heading.className = 'pendant-simulator__heading';
+      root.prepend(heading);
+    }
+    heading.textContent = headingText;
+  }
+  const motionControls = root.querySelector<HTMLElement>('.pendant-simulator__motion-controls');
+  if (motionControls) motionControls.hidden = container.dataset.showMotionControls === 'false';
+  updateVerticalOffset(container, root);
 }
 
 /** Mount one independent simulator. Repeated mounts return its existing cleanup. */
@@ -55,7 +86,6 @@ export function mountSimulator(container: HTMLElement): () => void {
   root.className = 'pendant-simulator';
   root.style.setProperty('--pendant-display-width', `${width}px`);
   root.innerHTML = `
-    <h2 class="pendant-simulator__heading"></h2>
     <canvas class="pendant-simulator__canvas" width="${CANVAS_SIZE}" height="${CANVAS_SIZE}"
       aria-label="Interactive LED fluid pendant. Drag through the liquid to stir it."></canvas>
     <p class="pendant-simulator__hint">Drag through the liquid to stir it</p>
@@ -64,9 +94,6 @@ export function mountSimulator(container: HTMLElement): () => void {
       <p class="pendant-simulator__motion-status" role="status"></p>
     </div>
   `;
-  const heading = root.querySelector<HTMLHeadingElement>('.pendant-simulator__heading')!;
-  heading.textContent = container.dataset.heading ?? 'FLIP Fluid Pendant Simulator';
-  heading.hidden = container.dataset.showHeading === 'false' || heading.textContent === '';
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas rendering is unavailable');
@@ -97,7 +124,11 @@ export function mountSimulator(container: HTMLElement): () => void {
   listen(doc, 'scroll', () => {
     if (active() && container.dataset.reactToScrolling !== 'false') scrolledSinceFrame = true;
   }, { capture: true, passive: true });
-  listen(view, 'resize', () => { scrollMotion.reset(); scrolledSinceFrame = false; });
+  listen(view, 'resize', () => {
+    scrollMotion.reset();
+    scrolledSinceFrame = false;
+    updateVerticalOffset(container, root);
+  });
 
   function updateMotionStatus(status: MotionStatus) {
     const messages: Record<MotionStatus, string> = {
@@ -252,7 +283,9 @@ export function mountSimulator(container: HTMLElement): () => void {
       ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
     }
 
-    // Metallic pendant housing
+    // Hiding the housing clears the ring even with an opaque canvas background.
+    // The display below remains opaque; the ring exposes the block behind it.
+    if (container.dataset.showHousing === 'false') ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
     ctx.arc(
       CENTER,
@@ -264,6 +297,7 @@ export function mountSimulator(container: HTMLElement): () => void {
 
     ctx.fillStyle = '#596574';
     ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
 
     // Dark LED display
     ctx.beginPath();
@@ -277,6 +311,10 @@ export function mountSimulator(container: HTMLElement): () => void {
 
     ctx.fillStyle = '#02070b';
     ctx.fill();
+
+    const green = container.dataset.ledColor === 'green';
+    const glowColor = green ? '0, 190, 80' : '0, 140, 255';
+    const coreColor = green ? '0, 255, 110' : '0, 190, 255';
 
     // Render LED matrix
     for (const led of leds) {
@@ -308,7 +346,7 @@ export function mountSimulator(container: HTMLElement): () => void {
         );
 
         ctx.fillStyle =
-          `rgba(0, 140, 255, ${brightness * 0.12})`;
+          `rgba(${glowColor}, ${brightness * 0.12})`;
 
         ctx.fill();
       }
@@ -324,7 +362,7 @@ export function mountSimulator(container: HTMLElement): () => void {
       );
 
       ctx.fillStyle =
-        `rgba(0, 190, 255, ${0.025 + brightness * 0.975})`;
+        `rgba(${coreColor}, ${0.025 + brightness * 0.975})`;
 
       ctx.fill();
     }
@@ -390,6 +428,9 @@ export function mountSimulator(container: HTMLElement): () => void {
     visible = entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0);
     reconcileVisibility();
   }) : null;
+  const sizeObserver = 'ResizeObserver' in view ? new view.ResizeObserver(() => {
+    if (!destroyed) updateVerticalOffset(container, root);
+  }) : null;
   listen(doc, 'visibilitychange', reconcileVisibility);
   listen(view, 'pagehide', () => {
     pageActive = false;
@@ -404,6 +445,7 @@ export function mountSimulator(container: HTMLElement): () => void {
     if (frameId !== null) view!.cancelAnimationFrame(frameId);
     frameId = null;
     observer?.disconnect();
+    sizeObserver?.disconnect();
     removers.forEach(remove => remove());
     releaseDrag();
     motion.disable();
@@ -419,6 +461,7 @@ export function mountSimulator(container: HTMLElement): () => void {
   updateSimulatorAppearance(container);
   render();
   observer?.observe(container);
+  sizeObserver?.observe(root, { box: 'border-box' });
   schedule();
   return cleanup;
 }

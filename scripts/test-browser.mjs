@@ -136,6 +136,11 @@ try {
     window.__csp = []; document.addEventListener('securitypolicyviolation', event=>__csp.push(event.violatedDirective));
     window.__loaderObservers=0;const NativeMutationObserver=window.MutationObserver;
     window.MutationObserver=class extends NativeMutationObserver {constructor(...args){super(...args);__loaderObservers++;}};
+    window.__resizeObservers=new Set();const NativeResizeObserver=window.ResizeObserver;
+    window.ResizeObserver=class extends NativeResizeObserver {
+      constructor(...args){super(...args);__resizeObservers.add(this);}
+      disconnect(){super.disconnect();__resizeObservers.delete(this);}
+    };
     window.DeviceMotionEvent = class extends Event { static requestPermission() { return Promise.resolve('granted'); } };
     window.DeviceOrientationEvent = class extends Event { static requestPermission() { return Promise.resolve('granted'); } };
   ` });
@@ -171,6 +176,80 @@ try {
   await evaluate('a.dataset.transparentBackground="false";__advance(1)');
   assert.equal(await evaluate('getComputedStyle(appearanceRoot).backgroundColor'), 'rgba(246, 240, 229, 0.5)');
   assert.deepEqual(await evaluate('Array.from(appearanceCanvas.getContext("2d").getImageData(0,0,1,1).data)'), [8, 12, 18, 255]);
+  // Housing transparency is independent of panel transparency and keeps the
+  // display opaque. Check actual canvas alpha, including restoration.
+  await evaluate('a.dataset.showHousing="false";__advance(1)');
+  assert.deepEqual(await evaluate('Array.from(appearanceCanvas.getContext("2d").getImageData(200,35,1,1).data)'), [0, 0, 0, 0]);
+  assert.deepEqual(await evaluate('Array.from(appearanceCanvas.getContext("2d").getImageData(200,200,1,1).data)'), [2, 7, 11, 255]);
+  assert.deepEqual(await evaluate('Array.from(appearanceCanvas.getContext("2d").getImageData(0,0,1,1).data)'), [8, 12, 18, 255]);
+  assert.deepEqual(await evaluate('Array.from(b.querySelector("canvas").getContext("2d").getImageData(200,35,1,1).data)'), [89, 101, 116, 255]);
+  await evaluate('a.dataset.transparentBackground="true";__advance(1)');
+  assert.equal(await evaluate('appearanceCanvas.getContext("2d").getImageData(200,35,1,1).data[3]'), 0);
+  assert.equal(await evaluate('appearanceCanvas.getContext("2d").getImageData(0,0,1,1).data[3]'), 0);
+  await evaluate('a.dataset.showHousing="true";a.dataset.transparentBackground="false";a.dataset.ledColor="green";__advance(1)');
+  assert.deepEqual(await evaluate('Array.from(appearanceCanvas.getContext("2d").getImageData(200,35,1,1).data)'), [89, 101, 116, 255]);
+  await evaluate(`window.ledPixels=canvas=>{const data=canvas.getContext('2d').getImageData(0,0,400,400).data;
+    let blue=0,green=0;for(let i=0;i<data.length;i+=4){if(data[i+3]<200)continue;
+    if(data[i+2]>data[i+1]+30&&data[i+1]>data[i]+30)blue++;
+    if(data[i+1]>data[i+2]+30&&data[i+1]>data[i]+30)green++;}return {blue,green}}`);
+  assert.ok(await evaluate('ledPixels(appearanceCanvas).green > 100 && ledPixels(appearanceCanvas).blue === 0'));
+  assert.ok(await evaluate('ledPixels(b.querySelector("canvas")).blue > 100 && ledPixels(b.querySelector("canvas")).green === 0'));
+  await evaluate('a.dataset.ledColor="invalid";__advance(1)');
+  assert.ok(await evaluate('ledPixels(appearanceCanvas).blue > 100 && ledPixels(appearanceCanvas).green === 0'));
+  // Color and housing changes do not reset the liquid: restoring the default
+  // appearance produces the same image as the untouched instance.
+  assert.equal(await evaluate('appearanceCanvas.toDataURL() === b.querySelector("canvas").toDataURL()'), true);
+  await command('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await delay(100);
+  for (const [scale, width] of [['50',200],['100',400],['150',600],['10',200],['200',600],['invalid',400]]) {
+    await evaluate(`a.dataset.radiusScale=${JSON.stringify(scale)}`);
+    assert.equal(await evaluate('appearanceCanvas.getBoundingClientRect().width'), width);
+    assert.equal(await evaluate('b.querySelector("canvas").getBoundingClientRect().width'), 400);
+    assert.equal(await evaluate('a.querySelector("canvas")===appearanceCanvas'), true);
+  }
+  // Container sizing uses CSS so a parent layout change alone resizes the
+  // pendant. It ignores the fixed radius and preserves the simulation instance.
+  await evaluate(`window.sizeImage=appearanceCanvas.toDataURL();window.sizeCleanup=PendantSimulator.mountSimulator(a);
+    a.dataset.sizeMode='container';a.dataset.radiusScale='150'`);
+  assert.equal(await evaluate('appearanceCanvas.getBoundingClientRect().width'), 644);
+  for (const [padding, width] of [['0',700],['5',630],['40',140],['-1',700],['101',140],['invalid',644]]) {
+    await evaluate(`a.dataset.containerPadding=${JSON.stringify(padding)}`);
+    assert.equal(await evaluate('appearanceCanvas.getBoundingClientRect().width'), width);
+    assert.equal(await evaluate('appearanceCanvas.getBoundingClientRect().height'), width);
+    assert.equal(await evaluate('b.querySelector("canvas").getBoundingClientRect().width'), 400);
+  }
+  await evaluate(`a.dataset.containerPadding='5';
+    window.offsetTop=appearanceCanvas.getBoundingClientRect().top;
+    window.offsetHeadingTop=a.querySelector('h2').getBoundingClientRect().top;
+    window.offsetHintTop=a.querySelector('.pendant-simulator__hint').getBoundingClientRect().top;
+    window.offsetBlockHeight=appearanceRoot.getBoundingClientRect().height`);
+  for (const [offset, percent] of [['-10',-10],['0',0],['10',10],['-100',-10],['100',10],['invalid',0]]) {
+    await evaluate(`a.dataset.verticalOffset=${JSON.stringify(offset)}`);
+    assert.ok(await evaluate(`Math.abs(appearanceCanvas.getBoundingClientRect().top-offsetTop-offsetBlockHeight*${percent}/100)<0.05`));
+    assert.equal(await evaluate('a.querySelector("h2").getBoundingClientRect().top'), await evaluate('offsetHeadingTop'));
+    assert.equal(await evaluate('a.querySelector(".pendant-simulator__hint").getBoundingClientRect().top'), await evaluate('offsetHintTop'));
+    assert.equal(await evaluate('appearanceRoot.getBoundingClientRect().height'), await evaluate('offsetBlockHeight'));
+    assert.equal(await evaluate('new DOMMatrix(getComputedStyle(b.querySelector("canvas")).transform).m42'), 0);
+  }
+  await evaluate(`a.dataset.verticalOffset='10';a.style.width='360px'`);
+  assert.ok(Math.abs(await evaluate('appearanceCanvas.getBoundingClientRect().width') - 324) < 0.05);
+  assert.ok(Math.abs(await evaluate('appearanceCanvas.getBoundingClientRect().height') - 324) < 0.05);
+  await waitFor(`Math.abs(new DOMMatrix(getComputedStyle(appearanceCanvas).transform).m42-appearanceRoot.getBoundingClientRect().height*0.1)<0.05`);
+  assert.notEqual(await evaluate('appearanceRoot.getBoundingClientRect().height'), await evaluate('offsetBlockHeight'));
+  await evaluate(`a.style.width='';a.dataset.radiusScale='50'`);
+  assert.equal(await evaluate('appearanceCanvas.getBoundingClientRect().width'), 630);
+  await waitFor(`Math.abs(new DOMMatrix(getComputedStyle(appearanceCanvas).transform).m42-appearanceRoot.getBoundingClientRect().height*0.1)<0.05`);
+  await evaluate(`a.dataset.sizeMode='fixed'`);
+  assert.equal(await evaluate('appearanceCanvas.getBoundingClientRect().width'), 200);
+  assert.equal(await evaluate('getComputedStyle(appearanceRoot).padding'), '16px');
+  await evaluate(`a.dataset.sizeMode='invalid'`);
+  assert.equal(await evaluate('appearanceCanvas.getBoundingClientRect().width'), 200);
+  assert.equal(await evaluate('a.querySelector("canvas")===appearanceCanvas && appearanceCanvas.toDataURL()===sizeImage && PendantSimulator.mountSimulator(a)===sizeCleanup'), true);
+  await evaluate(`a.dataset.sizeMode='fixed'`);
+  await command('Emulation.setDeviceMetricsOverride', { width: 1000, height: 900, deviceScaleFactor: 1, mobile: false });
+  await delay(100);
+  // Exercise the original stirring gesture at half radius as well.
+  await evaluate('a.dataset.ledColor="blue";a.dataset.radiusScale="50";a.dataset.verticalOffset="5"');
   const rect = await evaluate('a.querySelector("canvas").getBoundingClientRect().toJSON()');
   const y = rect.y + rect.height * 0.75;
   for (const [type, x, buttons] of [['mousePressed', rect.x + rect.width * 0.3, 1],
@@ -183,9 +262,31 @@ try {
   await waitFor('a.querySelector("button").getAttribute("aria-pressed") === "true"');
   assert.equal(await evaluate('b.querySelector("button").getAttribute("aria-pressed")'), 'false');
   assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 2);
-  await evaluate('a.dataset.backgroundColor="#f6f0e5";a.dataset.transparentBackground="true"');
+  await evaluate('a.dataset.backgroundColor="#f6f0e5";a.dataset.transparentBackground="true";a.dataset.showHousing="false";a.dataset.ledColor="green";a.dataset.radiusScale="150";a.dataset.sizeMode="container";a.dataset.containerPadding="24"');
   assert.equal(await evaluate('a.querySelector("button").getAttribute("aria-pressed")'), 'true');
   assert.equal(await evaluate('a.querySelector("canvas")===appearanceCanvas'), true);
+  await evaluate('a.dataset.sizeMode="fixed";a.dataset.verticalOffset="0"');
+  // Blank headings are absent from the DOM and leave no heading gap. Hiding
+  // phone controls collapses the whole group without resetting enabled sensors.
+  await evaluate(`window.presentationImage=appearanceCanvas.toDataURL();window.presentationCleanup=PendantSimulator.mountSimulator(a);
+    a.dataset.heading='';a.dataset.showMotionControls='false'`);
+  assert.equal(await evaluate('a.querySelector("h2")'), null);
+  assert.equal(await evaluate('appearanceRoot.firstElementChild===appearanceCanvas'), true);
+  assert.equal(await evaluate('appearanceCanvas.getBoundingClientRect().top-appearanceRoot.getBoundingClientRect().top'), 16);
+  assert.equal(await evaluate('a.querySelector(".pendant-simulator__motion-controls").getClientRects().length'), 0);
+  assert.ok(await evaluate('a.querySelector(".pendant-simulator__hint").getClientRects().length > 0'));
+  assert.equal(await evaluate('b.querySelector(".pendant-simulator__motion-controls").hidden'), false);
+  assert.equal(await evaluate('b.querySelector("h2").textContent'), 'Two');
+  await evaluate(`a.dataset.heading=${JSON.stringify(' \n\t ')};a.dataset.backgroundColor='#f6f0e5'`);
+  assert.equal(await evaluate('a.querySelector("h2")'), null);
+  await evaluate(`a.dataset.showHeading='false';a.dataset.heading='Try the pendant'`);
+  assert.equal(await evaluate('a.querySelector("h2")'), null);
+  await evaluate(`a.dataset.showHeading='true';a.dataset.showMotionControls='true'`);
+  assert.equal(await evaluate('appearanceRoot.firstElementChild.textContent'), 'Try the pendant');
+  assert.ok(await evaluate('a.querySelector(".pendant-simulator__motion-controls").getClientRects().length > 0'));
+  assert.equal(await evaluate('a.querySelector("canvas")===appearanceCanvas && appearanceCanvas.toDataURL()===presentationImage && PendantSimulator.mountSimulator(a)===presentationCleanup'), true);
+  assert.equal(await evaluate('a.querySelector("button").getAttribute("aria-pressed")'), 'true');
+  assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 2);
   await evaluate('window.oldCanvas=a.querySelector("canvas");window.dispose=PendantSimulator.mountSimulator(a);dispose();dispose()');
   assert.equal(await evaluate('__frames.size'), 1);
   assert.equal(await evaluate('oldCanvas.width'), 0);
@@ -219,13 +320,18 @@ try {
   await waitFor('__frames.size === 1');
   await evaluate('window.scrollTo(0,0)');
   await waitFor('__frames.size === 2');
+  await evaluate('a.dataset.sizeMode="container";a.dataset.containerPadding="20"');
   await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 900, deviceScaleFactor: 1, mobile: false });
   await delay(100);
   assert.ok(await evaluate('a.querySelector("canvas").getBoundingClientRect().width <= 320'));
+  assert.equal(await evaluate('a.querySelector("canvas").getBoundingClientRect().width'), 192);
+  assert.equal(await evaluate('a.querySelector("canvas").getBoundingClientRect().height'), 192);
+  assert.ok(await evaluate('document.documentElement.scrollWidth <= 320'));
   const screenshot = await command('Page.captureScreenshot', { format: 'png' });
   await writeFile('/tmp/pendant-shopify-smoke.png', Buffer.from(screenshot.data, 'base64'));
   await evaluate('document.querySelector("#section").remove();document.querySelector("#below").remove()');
   assert.equal(await evaluate('__frames.size'), 0);
+  assert.equal(await evaluate('__resizeObservers.size'), 0);
   assert.equal(await evaluate('__listeners.filter(record=>["visibilitychange","pagehide","pageshow","devicemotion","deviceorientation","scroll","resize"].includes(record.type)).length'), 0);
   // The editor inserts only block markup; templates themselves must not fetch
   // or execute assets. The once-per-file hook watches the new markup.
@@ -238,8 +344,13 @@ try {
   await waitFor('__loaderObservers === 1');
   const beforeInsertion = { ...assetRequests };
   assert.equal(await evaluate('!!window.PendantSimulator'), false);
-  await evaluate(`document.body.insertAdjacentHTML('beforeend',${JSON.stringify(blockMarkup('data-particle-count="500"'))})`);
+  await evaluate(`document.body.insertAdjacentHTML('beforeend',${JSON.stringify(blockMarkup('data-particle-count="500" data-heading="" data-show-motion-controls="false" data-size-mode="container" data-container-padding="10"'))})`);
   await waitFor('document.querySelectorAll(".pendant-simulator").length === 1');
+  assert.equal(await evaluate('document.querySelector(".pendant-simulator__heading")'), null);
+  assert.equal(await evaluate('document.querySelector(".pendant-simulator").firstElementChild.tagName'), 'CANVAS');
+  assert.equal(await evaluate('document.querySelector(".pendant-simulator__motion-controls").getClientRects().length'), 0);
+  assert.equal(await evaluate('document.querySelector("canvas").getBoundingClientRect().width'), 256);
+  assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 0);
   await evaluate(`document.body.insertAdjacentHTML('beforeend',${JSON.stringify(blockMarkup('data-particle-count="500"').repeat(2))})`);
   await waitFor('document.querySelectorAll(".pendant-simulator").length === 3');
   assert.deepEqual(assetRequests, { script: beforeInsertion.script + 1, style: beforeInsertion.style + 1 });
@@ -320,7 +431,7 @@ try {
   await command('Page.navigate', { url: devServer.resolvedUrls.local[0] });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: live per-block scroll toggle preserves fluid and sensors; page/nested scroll inertia alongside sensors; fixed pendant; per-block background/text colors and alpha; live style updates preserve canvas, motion and fluid state; invalid-color fallback; single asset loading; independent stirring/sensors; cleanup; editor reloads; CSP; mobile layout; standalone and Vite development.');
+  console.log('Browser checks passed: percentage padding; vertical offset follows enclosing block height through resizes without moving labels or changing layout; offset stirring and observer cleanup; container sizing preserves fixed settings; hidden controls and headings collapse; live updates preserve fluid and sensors; housing and LED colors; radius scaling; scroll inertia; single asset loading; editor reloads; CSP; mobile layout; standalone and Vite development.');
 } finally {
   await devServer?.close();
   socket?.close();
@@ -329,5 +440,6 @@ try {
     await once(browser, 'exit');
   }
   server.close();
-  await rm(temporary, { recursive: true, force: true });
+  // Chrome's helper processes can finish profile writes just after it exits.
+  await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

@@ -73,9 +73,10 @@ under `dist/shopify-theme` for manual copying.
 
 Open the desired product template in **Online Store → Themes → Customize**, then
 choose **Add block → Pendant simulator** in an existing section that accepts native
-`@theme` blocks. Configure its heading, background color, text color, display width,
-fill height, particle count, gravity strength, and **React to scrolling**. No standalone section, asset-loader snippet, layout edit,
-or template edit is required. Sections that only support their own local block
+`@theme` blocks. Configure its heading, phone motion controls, background and text colors, housing,
+LED color, size mode, container padding or display width/radius, fill height, particle count, gravity strength,
+and **React to scrolling**. No standalone section, asset-loader snippet, layout
+edit, or template edit is required. Sections that only support their own local block
 types cannot accept an arbitrary native theme block; this deployment does not
 modify existing sections to add support.
 
@@ -127,13 +128,59 @@ Background and text colors are per-instance settings. The default background is
 `#101820`, with white text and a muted status message. Enable **Transparent
 background** to expose the theme behind both the block panel and the canvas
 outside the circular pendant. Turning it off restores the selected background
-color and the original canvas background. The circular housing and LED display
-keep their colors. Use a text color that contrasts with the theme behind the
-transparent block. Appearance changes update in place, preserving the current fluid state,
-pointer handlers, and motion permissions.
+color and the original canvas background. Use a text color that contrasts with
+the theme behind the transparent block. Appearance changes update in place,
+preserving the current fluid state, pointer handlers, and motion permissions.
+
+The heading is omitted entirely when empty, whitespace-only, or **Show heading**
+is off, leaving no placeholder or gap. **Show phone motion controls** (on by
+default) shows or hides the motion button and its status text together, without
+reserving space when hidden. Hiding the controls does not request motion access
+or disable motion that is already enabled. Heading and control visibility changes
+preserve the canvas and fluid. Standalone embeds can use an empty `data-heading`
+and `data-show-motion-controls="false"` for the same behavior.
+
+**Show gray housing** (on by default) controls the metallic ring. Turning it off
+makes the ring transparent while keeping the dark LED display visible. To expose
+the theme behind the ring, also enable **Transparent background**; otherwise the
+block's background shows through. **LED color** selects blue (default) or green,
+including the LED glow.
+
+**Size mode → Set display size** is the default and preserves the existing
+width/radius settings and 16px block padding. **Pendant radius** scales the pendant
+and LEDs from 50% to 150% in 5% steps,
+defaulting to 100%. It scales relative to **Maximum display width**: at 400px,
+the canvas is 200px, 400px, or 600px wide at 50%, 100%, or 150%, respectively,
+when space permits. It always fits within its container without clipping; heading
+and controls retain their size. Pointer stirring and scroll input use the actual
+displayed size. Standalone embeds use `data-show-housing="false"`,
+`data-led-color="green"`, and `data-radius-scale="150"` on their container.
+
+**Size mode → Adapt to container** fills the surrounding section or column's
+available width while keeping the canvas square. **Container padding** appears
+in this mode and sets space inside the block on all sides, from 0% to 40% in 1%
+steps (4% by default). Each side is a percentage of the block's width, including
+top and bottom padding, following CSS percentage padding. The canvas uses the width
+left after padding, so a 600px block with 5% padding displays a 540px square canvas.
+Previously saved padding numbers now represent percentages rather than pixels.
+The canvas height follows its width; the parent does not need a fixed height.
+Heading and controls retain their
+normal text size. Maximum display width and Pendant radius are hidden and ignored
+in this mode; switching back restores their saved values. Size mode and padding
+update without resetting fluid or phone motion. Standalone embeds can use
+`data-size-mode="container"` and `data-container-padding="5"`.
+
+**Vertical center offset** moves only the pendant up or down, from -10% to +10%
+of the enclosing simulator block's full height in 1% steps (0% by default).
+Negative values move up; positive values move down. The heading, instructions,
+controls, and block's layout height stay in place. The offset applies in either
+size mode and is recalculated as the block resizes. It moves the canvas itself,
+so the pendant stays intact and stirring follows its displayed position.
+Standalone embeds use `data-vertical-offset="-5"`.
 
 The `pendant-simulator` custom element mounts on connection and cleans up on
-disconnection. Appearance updates change only styles; other attribute updates
+disconnection. Appearance updates change rendering and styles in place; scroll
+reaction updates in place too. Other attribute updates
 remount only that instance. Shopify section
 load/unload events also mount and dispose the affected elements. This handles
 editor block removal, replacement, and reordering, including when HTML is replaced
