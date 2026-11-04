@@ -69,6 +69,7 @@ test('native theme block exposes configurable settings and editor identity witho
   assert.equal(offset.type, 'range');
   assert.deepEqual([offset.min, offset.max, offset.step, offset.default, offset.unit], [-10, 10, 1, 0, '%']);
   assert.match(liquid, /data-vertical-offset="{{ block\.settings\.vertical_offset \| default: 0 }}"/);
+  assert.equal(block.settings.find(setting => setting.id === 'fill_level').default, 25);
   const particles = block.settings.find(setting => setting.id === 'particle_count');
   assert.equal(particles.type, 'select');
   assert.equal(particles.default, '2000');

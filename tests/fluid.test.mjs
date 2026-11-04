@@ -58,6 +58,27 @@ test('gravity changes move the pool while preserving volume and containing parti
   }
 });
 
+test('energetic stirring produces a splash that returns and settles without particle loss', () => {
+  const sim = new FluidSimulation();
+  sim.setGravity(0, 14);
+  const initial = measure(sim);
+  advance(sim, 240);
+  sim.dragParticles(-0.4, 0.75, 0, 0.45, 1 / 60);
+  sim.dragParticles(0, 0.45, 0.4, 0.15, 1 / 60);
+  let peakAirborne = 0;
+  for (let step = 0; step < 180; step++) {
+    sim.update(1 / 120);
+    peakAirborne = Math.max(peakAirborne, sim.particles.filter(p => p.y < 0.25).length);
+  }
+  assert.ok(peakAirborne > 50, String(peakAirborne));
+  advance(sim, 600);
+  const settled = measure(sim);
+  assert.equal(sim.particles.length, 2000);
+  assert.equal(sim.particles.filter(p => p.y < 0.15).length, 0);
+  assert.ok(settled.cells > initial.cells * 0.85 && settled.cells < initial.cells * 1.25, JSON.stringify(settled));
+  assert.ok(settled.speed < 0.5, JSON.stringify(settled));
+});
+
 test('empty and full fills initialize without rejection-sampling hangs', () => {
   for (const radius of [0.5, 1, 2]) {
     assert.equal(new FluidSimulation(radius, 100, 0).particles.length, 0);

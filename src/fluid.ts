@@ -16,12 +16,13 @@ export class FluidSimulation {
   readonly radius: number;
   readonly dx: number;
 
-  // A little PIC damping suppresses unresolved particle noise in the small pool.
-  readonly flipRatio = 0.7;
+  // Preserve more splash momentum while retaining some PIC damping for noise.
+  readonly flipRatio = 0.85;
   readonly pressureIterations = 60;
 
   private readonly dtEpsilon = 1e-8;
   private readonly densityRelaxationRate = 80;
+  private readonly maxParticleSpeed = 10;
 
   // MAC grid:
   // u: (n + 1) x n, horizontal velocity
@@ -50,7 +51,7 @@ export class FluidSimulation {
   constructor(
     radius = 1,
     particleCount = 2000,
-    fillLevel = 0.3
+    fillLevel = 0.25
   ) {
     if (!Number.isFinite(radius) || radius <= 0 ||
         !Number.isInteger(particleCount) || particleCount < 0 ||
@@ -168,7 +169,7 @@ export class FluidSimulation {
     if (lengthSquared < 1e-16) return;
 
     const elapsed = Math.min(dt, 0.05);
-    const speedScale = Math.min(1 / elapsed, 8 / Math.sqrt(lengthSquared));
+    const speedScale = Math.min(1 / elapsed, this.maxParticleSpeed / Math.sqrt(lengthSquared));
     const vx = dx * speedScale;
     const vy = dy * speedScale;
     const radiusSquared = influenceRadius * influenceRadius;
@@ -643,7 +644,7 @@ export class FluidSimulation {
       p.vy = flip * flipVY + (1 - flip) * picVY;
 
       const speed = Math.hypot(p.vx, p.vy);
-      const maxSpeed = 8;
+      const maxSpeed = this.maxParticleSpeed;
 
       if (speed > maxSpeed) {
         p.vx *= maxSpeed / speed;

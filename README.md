@@ -127,6 +127,13 @@ The **Particle count** dropdown offers 500 to 10,000 in 500-particle increments,
 with a default of 2,000. A dropdown supports values beyond Shopify's range-slider
 maximum, which must be below 10,000. Standalone mounts accept the same limits.
 
+The default fill height is 25%, leaving headroom for splashes. The solver uses
+85% FLIP and 15% PIC blending to preserve motion while retaining damping, and
+stirring and grid-transfer speed limits share a value of 10 simulation units per
+second. Gravity, pressure correction, and detached-drop handling keep their
+existing behavior. Existing Shopify blocks retain their saved fill height; choose
+25% in **Initial fill height** for the same headroom as a new block.
+
 Background and text colors are per-instance settings. The default background is
 `#101820`, with white text and a muted status message. Enable **Transparent
 background** to expose the theme behind both the block panel and the canvas

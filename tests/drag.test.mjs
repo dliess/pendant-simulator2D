@@ -31,7 +31,8 @@ test('drag velocity follows each swipe direction and stays bounded across repeat
     for (let i = 0; i < 50; i++) sim.dragParticles(-x, -y, x, y, 1 / 60);
     assert.ok(p.vx * x + p.vy * y > 0);
     assert.ok(Math.abs(p.vx * y - p.vy * x) < 1e-12);
-    assert.ok(Math.hypot(p.vx, p.vy) <= 8 + 1e-12);
+    assert.ok(Math.hypot(p.vx, p.vy) > 9.9);
+    assert.ok(Math.hypot(p.vx, p.vy) <= 10 + 1e-12);
   }
 });
 
