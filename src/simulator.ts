@@ -9,7 +9,10 @@ const HOUSING_RADIUS = 175;
 const DISPLAY_RADIUS = 158;
 const GRID_SIZE = 16;
 const LED_SPACING = 19;
-const LED_RADIUS = 6;
+const LED_WIDTH = 9;
+const LED_HEIGHT = 12;
+const LED_CORNER_RADIUS = 2;
+const LED_ON_DENSITY = 3;
 const FIXED_DT = 1 / 120;
 const MAX_STEPS_PER_FRAME = 6;
 
@@ -274,6 +277,28 @@ export function mountSimulator(container: HTMLElement): () => void {
   // Rendering
   // --------------------------------------------------
 
+  function drawLED(x: number, y: number, scale: number, color: string) {
+    const left = x - LED_WIDTH * scale / 2;
+    const right = x + LED_WIDTH * scale / 2;
+    const top = y - LED_HEIGHT * scale / 2;
+    const bottom = y + LED_HEIGHT * scale / 2;
+    const corner = LED_CORNER_RADIUS * scale;
+    // Explicit curves keep rounded LEDs available in the Safari 14 build target.
+    ctx.beginPath();
+    ctx.moveTo(left + corner, top);
+    ctx.lineTo(right - corner, top);
+    ctx.quadraticCurveTo(right, top, right, top + corner);
+    ctx.lineTo(right, bottom - corner);
+    ctx.quadraticCurveTo(right, bottom, right - corner, bottom);
+    ctx.lineTo(left + corner, bottom);
+    ctx.quadraticCurveTo(left, bottom, left, bottom - corner);
+    ctx.lineTo(left, top + corner);
+    ctx.quadraticCurveTo(left, top, left + corner, top);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
   function render() {
     // Clear the previous frame so transparent mode exposes the theme behind the
     // round housing without changing the housing, display, or LED colors.
@@ -323,10 +348,8 @@ export function mountSimulator(container: HTMLElement): () => void {
         led.y
       );
 
-      // Lower coefficient because FLIP uses
-      // many more particles than our old PBF solver.
-      const brightness =
-        1 - Math.exp(-density * 0.06);
+      // Switch the LED at a fixed occupancy threshold; empty LEDs emit no light.
+      if (density < LED_ON_DENSITY) continue;
 
       const px =
         CENTER + led.x * DISPLAY_RADIUS;
@@ -335,36 +358,10 @@ export function mountSimulator(container: HTMLElement): () => void {
         CENTER + led.y * DISPLAY_RADIUS;
 
       // LED glow
-      if (brightness > 0.15) {
-        ctx.beginPath();
-        ctx.arc(
-          px,
-          py,
-          LED_RADIUS * 1.8,
-          0,
-          Math.PI * 2
-        );
-
-        ctx.fillStyle =
-          `rgba(${glowColor}, ${brightness * 0.12})`;
-
-        ctx.fill();
-      }
+      drawLED(px, py, 1.8, `rgba(${glowColor}, 0.12)`);
 
       // LED core
-      ctx.beginPath();
-      ctx.arc(
-        px,
-        py,
-        LED_RADIUS,
-        0,
-        Math.PI * 2
-      );
-
-      ctx.fillStyle =
-        `rgba(${coreColor}, ${0.025 + brightness * 0.975})`;
-
-      ctx.fill();
+      drawLED(px, py, 1, `rgb(${coreColor})`);
     }
   }
 

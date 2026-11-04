@@ -144,7 +144,10 @@ and `data-show-motion-controls="false"` for the same behavior.
 makes the ring transparent while keeping the dark LED display visible. To expose
 the theme behind the ring, also enable **Transparent background**; otherwise the
 block's background shows through. **LED color** selects blue (default) or green,
-including the LED glow.
+including the LED glow. LEDs switch fully on or off based on local fluid density.
+Lit cores use the full selected color with a fixed glow; unlit LEDs emit no light.
+Each LED is a rounded rectangle, 12 units tall and 9 units wide (height:width 4:3),
+with a matching rounded rectangular glow. Both scale with the pendant.
 
 **Size mode → Set display size** is the default and preserves the existing
 width/radius settings and 16px block padding. **Pendant radius** scales the pendant

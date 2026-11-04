@@ -199,6 +199,34 @@ try {
   // Color and housing changes do not reset the liquid: restoring the default
   // appearance produces the same image as the untouched instance.
   assert.equal(await evaluate('appearanceCanvas.toDataURL() === b.querySelector("canvas").toDataURL()'), true);
+  // Sample LED centers, avoiding antialiased edges. Every core must be
+  // either the unchanged display background or the full selected opaque color.
+  await evaluate(`window.ledStates=(canvas,color)=>{
+    const context=canvas.getContext('2d'),lit=color==='green'?[0,255,110,255]:[0,190,255,255];
+    let on=0,off=0,shape=null;const invalid=[];
+    for(let y=0;y<16;y++)for(let x=0;x<16;x++){
+      const dx=x-7.5,dy=y-7.5;if(Math.hypot(dx,dy)>7.6)continue;
+      const pixel=Array.from(context.getImageData(Math.round(200+dx*19),Math.round(200+dy*19),1,1).data);
+      if(pixel.every((value,k)=>value===lit[k])){
+        on++;
+        if(!shape){const at=(ox,oy)=>Array.from(context.getImageData(Math.floor(200+dx*19+ox),Math.floor(200+dy*19+oy),1,1).data);
+          shape={vertical:at(0,5),horizontal:at(5,0),corner:at(4,5),inside:at(3,4)};}
+      }
+      else if(pixel.every((value,k)=>value===[2,7,11,255][k]))off++;
+      else invalid.push(pixel);
+    }return {on,off,invalid,shape};}`);
+  for (const color of ['blue','green','blue']) {
+    await evaluate(`a.dataset.ledColor=${JSON.stringify(color)};__advance(6)`);
+    const states=await evaluate(`ledStates(appearanceCanvas,${JSON.stringify(color)})`);
+    assert.deepEqual(states.invalid, [], 'LED cores must never have intermediate brightness');
+    assert.ok(states.on > 0 && states.off > 0, JSON.stringify(states));
+    const full=color==='green'?[0,255,110,255]:[0,190,255,255];
+    assert.deepEqual(states.shape.vertical,full,'rounded LEDs extend further vertically');
+    assert.notDeepEqual(states.shape.horizontal,full,'rounded LEDs are narrower than they are tall');
+    assert.deepEqual(states.shape.inside,full,'the rectangular interior stays fully lit');
+    assert.notDeepEqual(states.shape.corner,full,'the outer corners are rounded');
+  }
+  assert.equal(await evaluate('appearanceCanvas.toDataURL() === b.querySelector("canvas").toDataURL()'), true);
   await command('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 1, mobile: false });
   await delay(100);
   for (const [scale, width] of [['50',200],['100',400],['150',600],['10',200],['200',600],['invalid',400]]) {
@@ -258,6 +286,7 @@ try {
   }
   await evaluate('__advance(30)');
   assert.equal(await evaluate('a.querySelector("canvas").toDataURL() !== b.querySelector("canvas").toDataURL()'), true);
+  assert.deepEqual(await evaluate('ledStates(appearanceCanvas,"blue").invalid'), []);
   await evaluate('a.querySelector("button").click()');
   await waitFor('a.querySelector("button").getAttribute("aria-pressed") === "true"');
   assert.equal(await evaluate('b.querySelector("button").getAttribute("aria-pressed")'), 'false');
@@ -431,7 +460,7 @@ try {
   await command('Page.navigate', { url: devServer.resolvedUrls.local[0] });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: percentage padding; vertical offset follows enclosing block height through resizes without moving labels or changing layout; offset stirring and observer cleanup; container sizing preserves fixed settings; hidden controls and headings collapse; live updates preserve fluid and sensors; housing and LED colors; radius scaling; scroll inertia; single asset loading; editor reloads; CSP; mobile layout; standalone and Vite development.');
+  console.log('Browser checks passed: tall rounded rectangular LEDs with fully on/off blue and green cores; percentage padding; vertical offset follows enclosing block height through resizes without moving labels or changing layout; offset stirring and observer cleanup; container sizing preserves fixed settings; hidden controls and headings collapse; live updates preserve fluid and sensors; housing and LED colors; radius scaling; scroll inertia; single asset loading; editor reloads; CSP; mobile layout; standalone and Vite development.');
 } finally {
   await devServer?.close();
   socket?.close();
