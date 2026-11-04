@@ -133,6 +133,41 @@ test('denied or failed permissions leave drag-only gravity available', async () 
   }
 });
 
+test('gesture-required permissions can be retried without duplicating sensor listeners', async () => {
+  const { host, motion, timers } = fixture();
+  let gesture = false;
+  let requests = 0;
+  const request = () => {
+    requests++;
+    return gesture ? Promise.resolve('granted') :
+      Promise.reject(Object.assign(new Error('User gesture required'), { name: 'NotAllowedError' }));
+  };
+  host.DeviceMotionEvent.requestPermission = host.DeviceOrientationEvent.requestPermission = request;
+  await motion.enable();
+  assert.equal(motion.enabled, false);
+  assert.equal(motion.status, 'permission-required');
+  assert.equal(timers.size, 0);
+  close(motion.sample(1 / 60), 0, 14);
+  gesture = true;
+  await Promise.all([motion.enable(), motion.enable()]);
+  assert.equal(requests, 4);
+  assert.equal(motion.enabled, true);
+  assert.equal(host.listeners.get('devicemotion').size, 1);
+  assert.equal(host.listeners.get('deviceorientation').size, 1);
+  motion.disable();
+  for (const listeners of host.listeners.values()) assert.equal(listeners.size, 0);
+  assert.equal(timers.size, 0);
+});
+
+test('previously granted motion permissions work without a new gesture', async () => {
+  const { host, motion } = fixture();
+  host.DeviceMotionEvent.requestPermission = host.DeviceOrientationEvent.requestPermission = () => Promise.resolve('granted');
+  await motion.enable();
+  assert.equal(motion.enabled, true);
+  host.emit('deviceorientation', { beta: 90, gamma: 0 });
+  close(settle(motion), 0, 14);
+});
+
 test('disabling clears sensor forces and listeners, including pending permission requests', async () => {
   const { host, motion, timers } = fixture();
   await motion.enable();

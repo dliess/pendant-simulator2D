@@ -373,18 +373,80 @@ try {
   await waitFor('__loaderObservers === 1');
   const beforeInsertion = { ...assetRequests };
   assert.equal(await evaluate('!!window.PendantSimulator'), false);
+  await evaluate('delete DeviceMotionEvent.requestPermission;delete DeviceOrientationEvent.requestPermission');
   await evaluate(`document.body.insertAdjacentHTML('beforeend',${JSON.stringify(blockMarkup('data-particle-count="500" data-heading="" data-show-motion-controls="false" data-size-mode="container" data-container-padding="10"'))})`);
   await waitFor('document.querySelectorAll(".pendant-simulator").length === 1');
   assert.equal(await evaluate('document.querySelector(".pendant-simulator__heading")'), null);
   assert.equal(await evaluate('document.querySelector(".pendant-simulator").firstElementChild.tagName'), 'CANVAS');
   assert.equal(await evaluate('document.querySelector(".pendant-simulator__motion-controls").getClientRects().length'), 0);
   assert.equal(await evaluate('document.querySelector("canvas").getBoundingClientRect().width'), 256);
+  await waitFor('document.querySelector("button").getAttribute("aria-pressed")==="true"');
+  assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 2);
+  await evaluate(`window.autoBlock=document.querySelector('pendant-simulator');window.autoCanvas=autoBlock.querySelector('canvas');
+    window.autoCleanup=PendantSimulator.mountSimulator(autoBlock);autoBlock.dataset.showMotionControls='true';autoBlock.querySelector('button').click()`);
+  assert.equal(await evaluate('autoBlock.querySelector("button").getAttribute("aria-pressed")'), 'false');
+  await evaluate(`autoBlock.dataset.showMotionControls='false';autoBlock.dataset.textColor='#ffffff'`);
+  await waitFor('autoBlock.querySelector("button").getAttribute("aria-pressed")==="true"');
+  assert.equal(await evaluate('autoBlock.querySelector("canvas")===autoCanvas && PendantSimulator.mountSimulator(autoBlock)===autoCleanup'), true);
+  await evaluate('window.dispatchEvent(new PageTransitionEvent("pagehide",{persisted:true}))');
   assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 0);
+  await evaluate('window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}))');
+  await waitFor('autoBlock.querySelector("button").getAttribute("aria-pressed")==="true"');
   await evaluate(`document.body.insertAdjacentHTML('beforeend',${JSON.stringify(blockMarkup('data-particle-count="500"').repeat(2))})`);
   await waitFor('document.querySelectorAll(".pendant-simulator").length === 3');
   assert.deepEqual(assetRequests, { script: beforeInsertion.script + 1, style: beforeInsertion.style + 1 });
   assert.equal(await evaluate('document.head.querySelectorAll("[data-pendant-simulator-asset]").length'), 2);
   assert.deepEqual(await evaluate('__csp'), []);
+  await evaluate(`for(const block of document.querySelectorAll('pendant-simulator'))block.dataset.showMotionControls='false'`);
+  await waitFor('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length===6');
+  await evaluate(`document.querySelectorAll('pendant-simulator').forEach(block=>block.remove())`);
+  assert.equal(await evaluate('__frames.size'), 0);
+  assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation"||record.target instanceof HTMLCanvasElement).length'), 0);
+  // Emulate browsers that reject automatic permission requests until a genuine
+  // user activation. Tapping and keyboard activation work with the button hidden.
+  for (const input of ['pointer','touch','Enter',' ']) {
+    await command('Page.navigate', { url: `${origin}/empty-fixture` });
+    await waitFor('__loaderObservers === 1');
+    await evaluate(`window.__permissionCalls=[];
+      DeviceMotionEvent.requestPermission=DeviceOrientationEvent.requestPermission=()=>{
+        __permissionCalls.push(navigator.userActivation.isActive);
+        return navigator.userActivation.isActive?Promise.resolve('granted'):
+          Promise.reject(new DOMException('Tap required','NotAllowedError'));
+      };
+      document.body.insertAdjacentHTML('beforeend',${JSON.stringify(blockMarkup('data-particle-count="500" data-show-motion-controls="false"'))});`);
+    await waitFor('document.querySelector("canvas")?.getAttribute("role")==="button"');
+    assert.equal(await evaluate('document.querySelector("button").getAttribute("aria-pressed")'), 'false');
+    assert.equal(await evaluate('document.querySelector(".pendant-simulator__motion-controls").getClientRects().length'), 0);
+    assert.match(await evaluate('document.querySelector(".pendant-simulator__hint").textContent'), /Tap the pendant/);
+    assert.equal(await evaluate('document.querySelector("canvas").tabIndex'), 0);
+    if(input==='pointer'||input==='touch'){
+      const tap=await evaluate('document.querySelector("canvas").getBoundingClientRect().toJSON()');
+      if(input==='touch'){
+        await command('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
+        await command('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:tap.x+tap.width/2,y:tap.y+tap.height/2}]});
+        await command('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      }else{
+        for(const type of ['mousePressed','mouseReleased'])await command('Input.dispatchMouseEvent',{
+          type,x:tap.x+tap.width/2,y:tap.y+tap.height/2,button:'left',buttons:type==='mousePressed'?1:0,clickCount:1,
+        });
+      }
+    }else{
+      await evaluate('document.querySelector("canvas").focus()');
+      for(const type of ['keyDown','keyUp'])await command('Input.dispatchKeyEvent',{
+        type,key:input,code:input==='Enter'?'Enter':'Space',windowsVirtualKeyCode:input==='Enter'?13:32,
+      });
+    }
+    await waitFor('document.querySelector("button").getAttribute("aria-pressed")==="true"');
+    if(input==='touch')await command('Emulation.setTouchEmulationEnabled',{enabled:false});
+    assert.deepEqual(await evaluate('__permissionCalls'), [false,false,true,true]);
+    assert.equal(await evaluate('document.querySelector("canvas").getAttribute("role")'), null);
+    assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 2);
+    await evaluate('document.querySelector("pendant-simulator").dataset.backgroundColor="#112233"');
+    assert.equal(await evaluate('__permissionCalls.length'), 4);
+    await evaluate('document.querySelector("pendant-simulator").remove()');
+    assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation"||record.target instanceof HTMLCanvasElement).length'), 0);
+    assert.deepEqual(await evaluate('__csp'), []);
+  }
   // Compare an actual moving pendant with a fixed one. Both start with identical
   // fluid, then receive identical phone readings; only one moves while scrolling.
   await command('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1000, deviceScaleFactor: 1, mobile: false });
@@ -460,7 +522,7 @@ try {
   await command('Page.navigate', { url: devServer.resolvedUrls.local[0] });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: tall rounded rectangular LEDs with fully on/off blue and green cores; percentage padding; vertical offset follows enclosing block height through resizes without moving labels or changing layout; offset stirring and observer cleanup; container sizing preserves fixed settings; hidden controls and headings collapse; live updates preserve fluid and sensors; housing and LED colors; radius scaling; scroll inertia; single asset loading; editor reloads; CSP; mobile layout; standalone and Vite development.');
+  console.log('Browser checks passed: hidden controls enable motion automatically; touch/click and keyboard permission fallback; automatic history-cache resume; independent sensor cleanup; tall rounded rectangular on/off LEDs; percentage padding and vertical offset; container sizing; hidden controls and headings collapse; live updates preserve fluid and sensors; scroll inertia; single asset loading; editor reloads; CSP; mobile layout; standalone and Vite development.');
 } finally {
   await devServer?.close();
   socket?.close();

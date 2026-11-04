@@ -15,7 +15,7 @@ type SensorWindow = Window & {
 };
 
 export type MotionStatus =
-  'off' | 'requesting' | 'waiting' | 'active' | 'no-data' |
+  'off' | 'requesting' | 'permission-required' | 'waiting' | 'active' | 'no-data' |
   'denied' | 'unavailable' | 'insecure' | 'error';
 
 const EARTH_GRAVITY = 9.80665;
@@ -80,7 +80,10 @@ export class PhoneMotion {
     const useMotion = motion.status === 'fulfilled' && motion.value;
     const useOrientation = orientation.status === 'fulfilled' && orientation.value;
     if (!useMotion && !useOrientation) {
-      this.setStatus(motion.status === 'rejected' || orientation.status === 'rejected' ? 'error' : 'denied');
+      const failures = [motion, orientation].filter(result => result.status === 'rejected');
+      const needsGesture = failures.length > 0 && failures.every(result =>
+        result.reason?.name === 'NotAllowedError');
+      this.setStatus(needsGesture ? 'permission-required' : failures.length > 0 ? 'error' : 'denied');
       return;
     }
 

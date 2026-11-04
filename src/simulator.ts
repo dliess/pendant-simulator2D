@@ -19,7 +19,11 @@ const MAX_STEPS_PER_FRAME = 6;
 // Shared by repeated copies of the Shopify bundle, without a global registry
 // retaining removed blocks. The cleanup lives on its owning element only.
 const instanceKey = Symbol.for('pendant-simulator.cleanup');
-type SimulatorContainer = HTMLElement & { [instanceKey]?: () => void };
+const motionControlsKey = Symbol.for('pendant-simulator.motion-controls');
+type SimulatorContainer = HTMLElement & {
+  [instanceKey]?: () => void;
+  [motionControlsKey]?: () => void;
+};
 
 function numberSetting(value: string | undefined, fallback: number, min: number, max: number) {
   const number = value === undefined || value.trim() === '' ? NaN : Number(value);
@@ -70,6 +74,7 @@ export function updateSimulatorAppearance(container: HTMLElement) {
   }
   const motionControls = root.querySelector<HTMLElement>('.pendant-simulator__motion-controls');
   if (motionControls) motionControls.hidden = container.dataset.showMotionControls === 'false';
+  (container as SimulatorContainer)[motionControlsKey]?.();
   updateVerticalOffset(container, root);
 }
 
@@ -103,6 +108,7 @@ export function mountSimulator(container: HTMLElement): () => void {
   const ctx: CanvasRenderingContext2D = context;
   const motionButton = root.querySelector<HTMLButtonElement>('button')!;
   const motionStatus = root.querySelector<HTMLParagraphElement>('[role="status"]')!;
+  const hint = root.querySelector<HTMLParagraphElement>('.pendant-simulator__hint')!;
   let fluid: FluidSimulation | null = new FluidSimulation(1, particleCount, fillLevel);
   fluid.setGravity(0, gravityStrength);
   const motion = new PhoneMotion(view, gravityStrength, updateMotionStatus);
@@ -115,6 +121,7 @@ export function mountSimulator(container: HTMLElement): () => void {
   let frameId: number | null = null;
   let lastTime = view.performance.now();
   let accumulator = 0;
+  let controlsHidden: boolean | undefined;
 
   // Explicit removers also work in themes that use older event-listener shims.
   function listen(target: EventTarget, type: string, handler: (event: any) => void, options?: AddEventListenerOptions) {
@@ -137,6 +144,7 @@ export function mountSimulator(container: HTMLElement): () => void {
     const messages: Record<MotionStatus, string> = {
       off: 'Enable phone motion to tilt and shake the liquid.',
       requesting: 'Allow motion access in your browser.',
+      'permission-required': 'Tap Enable phone motion to allow access.',
       waiting: 'Move or tilt your phone to start.',
       active: 'Tilt and shake your phone, or drag to stir.',
       'no-data': 'No sensor readings yet. You can still drag to stir.',
@@ -149,12 +157,50 @@ export function mountSimulator(container: HTMLElement): () => void {
     motionButton.disabled = status === 'requesting' || status === 'unavailable' || status === 'insecure';
     motionButton.setAttribute('aria-pressed', String(motion.enabled));
     motionStatus.textContent = messages[status];
+    const automatic = container.dataset.showMotionControls === 'false';
+    const needsTap = automatic && !motion.enabled &&
+      (status === 'permission-required' || status === 'error' || status === 'denied');
+    hint.textContent = !automatic || status === 'off' ? 'Drag through the liquid to stir it' :
+      status === 'denied' ? 'Motion access was denied. Tap the pendant to try again, or drag to stir.' :
+      needsTap ? 'Tap the pendant to allow phone motion, or drag to stir.' : messages[status];
+    if (needsTap) {
+      canvas.tabIndex = 0;
+      canvas.setAttribute('role', 'button');
+      canvas.setAttribute('aria-label', 'Allow phone motion. Tap the pendant or press Enter or Space.');
+    } else {
+      canvas.removeAttribute('tabindex');
+      canvas.removeAttribute('role');
+      canvas.setAttribute('aria-label', 'Interactive LED fluid pendant. Drag through the liquid to stir it.');
+    }
+  }
+
+  function syncMotionControls(force = false) {
+    if (destroyed) return;
+    const hidden = container.dataset.showMotionControls === 'false';
+    if (!force && controlsHidden === hidden) return;
+    controlsHidden = hidden;
+    updateMotionStatus(motion.status);
+    if (hidden) void motion.enable();
+  }
+
+  function enableAutomaticMotion() {
+    if (!destroyed && container.dataset.showMotionControls === 'false' && !motion.enabled) {
+      void motion.enable();
+    }
   }
 
   updateMotionStatus(motion.status);
   listen(motionButton, 'click', () => {
     if (motion.enabled) motion.disable();
     else void motion.enable();
+  });
+  // A click carries touch activation; pointerdown may be too early on phones.
+  listen(canvas, 'click', enableAutomaticMotion);
+  listen(canvas, 'keydown', (event: KeyboardEvent) => {
+    if (container.dataset.showMotionControls !== 'false' || motion.enabled || event.repeat ||
+      (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault();
+    enableAutomaticMotion();
   });
 
   // --------------------------------------------------
@@ -434,7 +480,12 @@ export function mountSimulator(container: HTMLElement): () => void {
     motion.disable();
     reconcileVisibility();
   });
-  listen(view, 'pageshow', () => { pageActive = true; reconcileVisibility(); });
+  listen(view, 'pageshow', () => {
+    const resumed = !pageActive;
+    pageActive = true;
+    reconcileVisibility();
+    if (resumed) syncMotionControls(true);
+  });
 
   function cleanup() {
     if (destroyed) return;
@@ -451,9 +502,11 @@ export function mountSimulator(container: HTMLElement): () => void {
     canvas.width = canvas.height = 0;
     root.remove();
     delete host[instanceKey];
+    delete host[motionControlsKey];
   }
 
   host[instanceKey] = cleanup;
+  host[motionControlsKey] = syncMotionControls;
   container.append(root);
   updateSimulatorAppearance(container);
   render();

@@ -138,10 +138,16 @@ preserving the current fluid state, pointer handlers, and motion permissions.
 The heading is omitted entirely when empty, whitespace-only, or **Show heading**
 is off, leaving no placeholder or gap. **Show phone motion controls** (on by
 default) shows or hides the motion button and its status text together, without
-reserving space when hidden. Hiding the controls does not request motion access
-or disable motion that is already enabled. Heading and control visibility changes
-preserve the canvas and fluid. Standalone embeds can use an empty `data-heading`
-and `data-show-motion-controls="false"` for the same behavior.
+reserving space when hidden. Turning this setting off automatically enables phone
+motion, reusing access that has already been granted. If the browser requires an
+initial user gesture, the hint asks the visitor to tap the pendant to grant access;
+focusing the pendant and pressing Enter or Space also works. The button and status
+group stay hidden. Denied access, missing sensors, and insecure pages keep useful
+messages in the existing hint, and dragging remains available. Turning the controls
+back on preserves any active motion input and restores the manual toggle. Heading
+and control visibility changes preserve the canvas and fluid. Standalone embeds
+can use an empty `data-heading` and `data-show-motion-controls="false"` for the same
+behavior. Automatic mode also resumes after returning from a page-history cache.
 
 **Show gray housing** (on by default) controls the metallic ring. Turning it off
 makes the ring transparent while keeping the dark LED display visible. To expose
