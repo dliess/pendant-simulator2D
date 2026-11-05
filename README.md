@@ -107,6 +107,49 @@ Run `npm run deploy:theme` after future simulator changes, then review and commi
 changes separately in each repository. Shopify CDN URLs are supplied by the block;
 there is no localhost dependency.
 
+## Align the simulator with a pendant photograph
+
+In the Pendant simulator block, choose **Display mode → Overlay on pendant photo**
+and select a **Pendant photo**. Remove the duplicate background photo from the
+surrounding group; the simulator block now owns both the photograph and its display.
+
+Calibrate three controls once:
+
+- **Display center from left**: center position as a percentage of photo width.
+- **Display center from top**: center position as a percentage of photo height.
+- **Display diameter**: visible circular LED display diameter as a percentage of
+  photo width, excluding the simulated housing and canvas margins.
+
+For example, a display centered at 52% across and 60% down, with a diameter of 30%,
+keeps those coordinates at desktop and phone widths. The full photo preserves its
+original aspect ratio without cover cropping. Heading, instructions, and motion
+controls sit outside the photo and cannot move the display within it. The simulator
+adds only the circular LED display, leaving the photographed housing visible.
+This assumes a front-facing circular display in the photo; perspective-distorted
+or angled displays would need a different overlay shape.
+
+The photo fills the block's available width. Legacy size mode, padding, radius,
+housing, and vertical offset controls are hidden and ignored while a photo is
+active. Switching to **Simulator only** restores their saved values. A missing or
+failed photo falls back to the normal working simulator. Calibration and image
+changes preserve the existing fluid, canvas, and phone permissions. Responsive
+Shopify image candidates and lazy loading are included; no extra theme files are
+required.
+
+For a standalone embed, set `data-display-mode="photo"`, `data-photo-center-x`,
+`data-photo-center-y`, and `data-photo-diameter` on the container and provide:
+
+```html
+<template data-pendant-simulator-photo>
+  <img src="/pendant.jpg" width="1000" height="1400" alt="Pendant necklace">
+</template>
+```
+
+Put the template inside the container before calling `mountSimulator`. For live
+custom-element image changes, replace the template image and change
+`data-photo-version` (for example, to the new image URL), or dispatch the existing
+Shopify section-load event after updating its markup.
+
 ## Mount API and lifecycle
 
 ```ts

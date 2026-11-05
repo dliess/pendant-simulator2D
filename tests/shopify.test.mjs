@@ -60,15 +60,26 @@ test('native theme block exposes configurable settings and editor identity witho
   const padding = block.settings.find(setting => setting.id === 'container_padding');
   assert.equal(padding.type, 'range');
   assert.deepEqual([padding.min, padding.max, padding.step, padding.default, padding.unit], [0, 40, 1, 4, '%']);
-  assert.equal(padding.visible_if, "{{ block.settings.size_mode == 'container' }}");
+  assert.equal(padding.visible_if, "{{ block.settings.display_mode != 'photo' and block.settings.size_mode == 'container' }}");
   for (const id of ['display_width', 'radius_scale']) {
-    assert.equal(block.settings.find(setting => setting.id === id).visible_if, "{{ block.settings.size_mode != 'container' }}");
+    assert.equal(block.settings.find(setting => setting.id === id).visible_if, "{{ block.settings.display_mode != 'photo' and block.settings.size_mode != 'container' }}");
   }
   assert.match(liquid, /data-container-padding="{{ block\.settings\.container_padding \| default: 4 }}"/);
   const offset = block.settings.find(setting => setting.id === 'vertical_offset');
   assert.equal(offset.type, 'range');
   assert.deepEqual([offset.min, offset.max, offset.step, offset.default, offset.unit], [-10, 10, 1, 0, '%']);
   assert.match(liquid, /data-vertical-offset="{{ block\.settings\.vertical_offset \| default: 0 }}"/);
+  const displayMode = block.settings.find(setting => setting.id === 'display_mode');
+  assert.equal(displayMode.default, 'simulator');
+  assert.deepEqual(displayMode.options.map(option => option.value), ['simulator', 'photo']);
+  assert.equal(block.settings.find(setting => setting.id === 'pendant_photo').type, 'image_picker');
+  for (const id of ['pendant_photo', 'photo_center_x', 'photo_center_y', 'photo_diameter']) {
+    assert.equal(block.settings.find(setting => setting.id === id).visible_if, "{{ block.settings.display_mode == 'photo' }}");
+  }
+  for (const id of ['show_housing', 'size_mode', 'vertical_offset']) {
+    assert.equal(block.settings.find(setting => setting.id === id).visible_if, "{{ block.settings.display_mode != 'photo' }}");
+  }
+  assert.match(liquid, /<template data-pendant-simulator-photo>[\s\S]*?image_tag: widths:[\s\S]*?sizes: '100vw', loading: 'lazy'[\s\S]*?<\/template>/);
   assert.equal(block.settings.find(setting => setting.id === 'fill_level').default, 25);
   const particles = block.settings.find(setting => setting.id === 'particle_count');
   assert.equal(particles.type, 'select');
@@ -90,7 +101,7 @@ test('Shopify integration is block-only with exactly three deployable files', ()
 });
 
 test('embeddable CSS has no theme-wide selectors or global element IDs', () => {
-  const css = readFileSync('src/style.css', 'utf8');
+  const css = readFileSync('src/style.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const rules = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)];
   for (const [, selectors] of rules) {
     for (const selector of selectors.split(',')) {

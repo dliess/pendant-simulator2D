@@ -56,6 +56,55 @@ pendant-simulator {
   width: 100%;
 }
 
+.pendant-simulator[data-display-mode='photo'] {
+  padding: 0;
+}
+
+.pendant-simulator .pendant-simulator__photo-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.pendant-simulator .pendant-simulator__photo {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  object-fit: contain;
+}
+
+.pendant-simulator .pendant-simulator__photo-display {
+  position: absolute;
+  left: var(--pendant-photo-x, 50%);
+  top: var(--pendant-photo-y, 60%);
+  width: var(--pendant-photo-diameter, 30%);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+/* The square also works in Safari versions without CSS aspect-ratio support. */
+.pendant-simulator .pendant-simulator__photo-display::before {
+  content: '';
+  display: block;
+  padding-top: 100%;
+}
+
+.pendant-simulator[data-display-mode='photo'] .pendant-simulator__canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--pendant-photo-canvas-width);
+  max-width: none;
+  height: auto;
+  transform: translate(-50%, -50%);
+}
+
 .pendant-simulator .pendant-simulator__hint,
 .pendant-simulator .pendant-simulator__motion-status {
   margin: 0;

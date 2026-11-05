@@ -1,6 +1,7 @@
 import { FluidSimulation } from './fluid';
 import { PhoneMotion } from './motion';
 import { ScrollMotion } from './scroll';
+import { createPhotoOverlay } from './photo';
 import type { MotionStatus } from './motion';
 
 const CANVAS_SIZE = 400;
@@ -21,9 +22,11 @@ const MAX_STEPS_PER_FRAME = 6;
 // retaining removed blocks. The cleanup lives on its owning element only.
 const instanceKey = Symbol.for('pendant-simulator.cleanup');
 const motionControlsKey = Symbol.for('pendant-simulator.motion-controls');
+const photoKey = Symbol.for('pendant-simulator.photo');
 type SimulatorContainer = HTMLElement & {
   [instanceKey]?: () => void;
   [motionControlsKey]?: () => void;
+  [photoKey]?: () => void;
 };
 
 function numberSetting(value: string | undefined, fallback: number, min: number, max: number) {
@@ -32,7 +35,8 @@ function numberSetting(value: string | undefined, fallback: number, min: number,
 }
 
 function updateVerticalOffset(container: HTMLElement, root: HTMLElement) {
-  const percent = numberSetting(container.dataset.verticalOffset, 0, -10, 10);
+  const percent = root.dataset.displayMode === 'photo' ? 0 :
+    numberSetting(container.dataset.verticalOffset, 0, -10, 10);
   // CSS translateY(%) refers to the canvas itself. Use the enclosing block's
   // untransformed border-box height instead; translation does not change layout.
   const height = percent === 0 ? 0 :
@@ -76,6 +80,7 @@ export function updateSimulatorAppearance(container: HTMLElement) {
   const motionControls = root.querySelector<HTMLElement>('.pendant-simulator__motion-controls');
   if (motionControls) motionControls.hidden = container.dataset.showMotionControls === 'false';
   (container as SimulatorContainer)[motionControlsKey]?.();
+  (container as SimulatorContainer)[photoKey]?.();
   updateVerticalOffset(container, root);
 }
 
@@ -368,26 +373,29 @@ export function mountSimulator(container: HTMLElement): () => void {
     // Clear the previous frame so transparent mode exposes the theme behind the
     // round housing without changing the housing, display, or LED colors.
     ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-    if (container.dataset.transparentBackground !== 'true') {
+    const photoMode = root.dataset.displayMode === 'photo';
+    if (!photoMode && container.dataset.transparentBackground !== 'true') {
       ctx.fillStyle = '#080c12';
       ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
     }
 
     // Hiding the housing clears the ring even with an opaque canvas background.
     // The display below remains opaque; the ring exposes the block behind it.
-    if (container.dataset.showHousing === 'false') ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath();
-    ctx.arc(
-      CENTER,
-      CENTER,
-      HOUSING_RADIUS,
-      0,
-      Math.PI * 2
-    );
+    if (!photoMode) {
+      if (container.dataset.showHousing === 'false') ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      ctx.arc(
+        CENTER,
+        CENTER,
+        HOUSING_RADIUS,
+        0,
+        Math.PI * 2
+      );
 
-    ctx.fillStyle = '#596574';
-    ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#596574';
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    }
 
     // Dark LED display
     ctx.beginPath();
@@ -518,6 +526,14 @@ export function mountSimulator(container: HTMLElement): () => void {
     if (resumed) syncMotionControls(true);
   });
 
+  const photo = createPhotoOverlay(container, root, canvas, CANVAS_SIZE / (DISPLAY_RADIUS * 2), () => {
+    releaseDrag();
+    scrollMotion.reset();
+    scrolledSinceFrame = false;
+    updateVerticalOffset(container, root);
+    render();
+  });
+
   function cleanup() {
     if (destroyed) return;
     destroyed = true;
@@ -528,6 +544,7 @@ export function mountSimulator(container: HTMLElement): () => void {
     removers.forEach(remove => remove());
     releaseDrag();
     motion.disable();
+    photo.dispose();
     fluid = null;
     leds.length = 0;
     canvas.width = canvas.height = 0;
@@ -535,10 +552,12 @@ export function mountSimulator(container: HTMLElement): () => void {
     root.remove();
     delete host[instanceKey];
     delete host[motionControlsKey];
+    delete host[photoKey];
   }
 
   host[instanceKey] = cleanup;
   host[motionControlsKey] = syncMotionControls;
+  host[photoKey] = photo.update;
   container.append(root);
   updateSimulatorAppearance(container);
   render();

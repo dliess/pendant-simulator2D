@@ -21,7 +21,7 @@ const blockLoader = `(function(){${liquid.match(/{% javascript %}([\s\S]*?){% en
 const assetTemplate = liquid.match(/<template data-pendant-simulator-assets>[\s\S]*?<\/template>/)[0]
   .replaceAll("{{ 'pendant-simulator.css' | asset_url }}", '/shopify/pendant-simulator.css')
   .replaceAll("{{ 'pendant-simulator.js' | asset_url }}", '/shopify/pendant-simulator.js');
-const blockMarkup = attributes => `<pendant-simulator ${attributes}>${assetTemplate}</pendant-simulator>`;
+const blockMarkup = (attributes, photo = '') => `<pendant-simulator ${attributes}>${photo}${assetTemplate}</pendant-simulator>`;
 const assetRequests = { script: 0, style: 0 };
 const fixture = `<!doctype html><html><head>
 <link rel="stylesheet" href="/fixture.css">
@@ -43,6 +43,22 @@ const server = createServer(async (request, response) => {
   if (path === '/empty-fixture') {
     response.setHeader('Content-Type', 'text/html');
     response.end('<!doctype html><html><head><link rel="stylesheet" href="/fixture.css"><script src="/block-loader.js" defer></script></head><body></body></html>');
+    return;
+  }
+  if (path === '/photo.svg' || path === '/landscape.svg') {
+    response.setHeader('Content-Type', 'image/svg+xml');
+    response.end(`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="${path === '/photo.svg' ? 1400 : 600}">
+      <rect width="100%" height="100%" fill="#e7ddd0"/>
+      <path d="M220 0L520 665L820 0" fill="none" stroke="#a48754" stroke-width="12"/>
+      <circle cx="520" cy="840" r="175" fill="#a48754"/><circle cx="520" cy="840" r="150" fill="#02070b"/>
+      </svg>`);
+    return;
+  }
+  if (path === '/photo-fixture') {
+    response.setHeader('Content-Type', 'text/html');
+    const photo = '<template data-pendant-simulator-photo><img src="/photo.svg" width="1000" height="1400" alt="Pendant necklace" loading="lazy"></template>';
+    const attributes = 'data-display-mode="photo" data-photo-center-x="52" data-photo-center-y="60" data-photo-diameter="30" data-heading="" data-particle-count="500" data-react-to-scrolling="false" data-size-mode="container" data-container-padding="25" data-vertical-offset="10" data-radius-scale="150"';
+    response.end(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><script src="/block-loader.js" defer></script></head><body><div class="pair" id="photo-pair">${blockMarkup(attributes, photo)}${blockMarkup(attributes, photo)}</div></body></html>`);
     return;
   }
   if (path === '/scroll-fixture') {
@@ -517,6 +533,96 @@ try {
   assert.equal(await evaluate('__frames.size'), 0);
   assert.equal(await evaluate('__listeners.filter(record=>["scroll","resize","devicemotion","deviceorientation"].includes(record.type)).length'), 0);
   assert.deepEqual(await evaluate('__csp'), []);
+  // Calibrate against the full image, not the block's heading/control height or
+  // the invisible margins around the canvas's 316-unit circular display.
+  await command('Emulation.setDeviceMetricsOverride', { width: 1400, height: 2200, deviceScaleFactor: 1, mobile: false });
+  await command('Page.navigate', { url: `${origin}/photo-fixture` });
+  await waitFor('document.querySelectorAll(".pendant-simulator__photo").length===2 && [...document.querySelectorAll(".pendant-simulator__photo")].every(img=>img.complete&&img.naturalWidth>0) && __frames.size===2');
+  await evaluate(`window.photoHost=document.querySelector('pendant-simulator');window.photoRoot=photoHost.querySelector('.pendant-simulator');
+    window.photoCanvas=photoHost.querySelector('canvas');window.photoCleanup=PendantSimulator.mountSimulator(photoHost);
+    window.photoGeometry=()=>{
+      const img=photoHost.querySelector('.pendant-simulator__photo').getBoundingClientRect();
+      const display=photoHost.querySelector('.pendant-simulator__photo-display').getBoundingClientRect();
+      const canvas=photoCanvas.getBoundingClientRect();
+      return {x:(display.x+display.width/2-img.x)/img.width,y:(display.y+display.height/2-img.y)/img.height,
+        diameter:display.width/img.width,aspect:img.height/img.width,square:display.height/display.width,
+        visibleDiameter:canvas.width*316/400/display.width,
+        canvasX:(canvas.x+canvas.width/2-display.x)/display.width,
+        canvasY:(canvas.y+canvas.height/2-display.y)/display.height};
+    };__advance(60)`);
+  const checkPhotoGeometry = async (expected = { x: .52, y: .6, diameter: .3, aspect: 1.4 }) => {
+    const geometry = await evaluate('photoGeometry()');
+    for (const [key, value] of Object.entries({ ...expected, square: 1, visibleDiameter: 1, canvasX: .5, canvasY: .5 })) {
+      assert.ok(Math.abs(geometry[key] - value) < .001, `${key}: ${JSON.stringify(geometry)}`);
+    }
+  };
+  await checkPhotoGeometry();
+  await evaluate('document.querySelector("#photo-pair").style.width="460px"');
+  await checkPhotoGeometry();
+  await evaluate('document.querySelector("#photo-pair").style.removeProperty("width")');
+  assert.equal(await evaluate('photoCanvas.getContext("2d").getImageData(200,30,1,1).data[3]'), 0, 'photo mode does not draw a housing or rectangular background');
+  for (const width of [900, 768, 390, 320]) {
+    await command('Emulation.setDeviceMetricsOverride', { width, height: 2200, deviceScaleFactor: 1, mobile: width < 600 });
+    await checkPhotoGeometry();
+    assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'), true);
+  }
+  await evaluate(`window.photoImage=photoCanvas.toDataURL();photoHost.dataset.heading='A longer heading above the photograph';
+    photoHost.dataset.showMotionControls='false';photoHost.dataset.verticalOffset='-10';
+    photoHost.dataset.containerPadding='40';photoHost.dataset.radiusScale='50'`);
+  await checkPhotoGeometry();
+  assert.equal(await evaluate('photoHost.querySelector("canvas")===photoCanvas && photoCanvas.toDataURL()===photoImage && PendantSimulator.mountSimulator(photoHost)===photoCleanup'), true);
+  await waitFor('photoHost.querySelector("button").getAttribute("aria-pressed")==="true"');
+  await evaluate(`photoHost.dataset.photoCenterX='47';photoHost.dataset.photoCenterY='55';photoHost.dataset.photoDiameter='45'`);
+  await checkPhotoGeometry({ x: .47, y: .55, diameter: .45, aspect: 1.4 });
+  assert.equal(await evaluate('photoHost.querySelector("button").getAttribute("aria-pressed")'), 'true');
+  // Actual touch stirring follows the small, positioned display on a phone.
+  await evaluate(`photoHost.dataset.heading='';photoHost.dataset.showMotionControls='true';
+    photoHost.querySelector('button').click();photoHost.dataset.photoCenterX='52';
+    photoHost.dataset.photoCenterY='60';photoHost.dataset.photoDiameter='30';__advance(1)`);
+  const touchDisplay = await evaluate('photoHost.querySelector(".pendant-simulator__photo-display").getBoundingClientRect().toJSON()');
+  await evaluate('window.beforePhotoStir=photoCanvas.toDataURL()');
+  await command('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  for (let step = 0; step <= 10; step++) {
+    await command('Input.dispatchTouchEvent', { type: step === 0 ? 'touchStart' : 'touchMove',
+      touchPoints: [{ x: touchDisplay.x + touchDisplay.width * (.3 + step * .04),
+        y: touchDisplay.y + touchDisplay.height * (.85 - step * .04) }] });
+  }
+  await command('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await command('Emulation.setTouchEmulationEnabled', { enabled: false });
+  await evaluate('__advance(12)');
+  assert.equal(await evaluate('photoCanvas.toDataURL()===beforePhotoStir'), false);
+  assert.equal(await evaluate('photoCanvas.toDataURL()===document.querySelectorAll("canvas")[1].toDataURL()'), false, 'photo instances stir independently');
+  // Image replacement in an editor morph updates the frame in place, including
+  // when its source attribute changes before the template's new contents arrive.
+  await evaluate(`photoHost.dataset.photoVersion='landscape';
+    {const img=photoHost.querySelector('template[data-pendant-simulator-photo]').content.querySelector('img');
+      img.src='/landscape.svg';img.height=600;img.alt='Landscape pendant';}`);
+  await waitFor('photoHost.querySelector(".pendant-simulator__photo")?.naturalHeight===600');
+  await checkPhotoGeometry({ x: .52, y: .6, diameter: .3, aspect: .6 });
+  assert.equal(await evaluate('photoHost.querySelector("canvas")===photoCanvas && photoHost.querySelector("img").alt==="Landscape pendant"'), true);
+  await evaluate(`photoHost.querySelector('template[data-pendant-simulator-photo]').content.querySelector('img').src='/missing-photo.png';
+    photoHost.dataset.photoVersion='missing'`);
+  await waitFor('photoRoot.dataset.displayMode==="simulator"');
+  assert.equal(await evaluate('photoCanvas.parentElement===photoRoot && !photoHost.querySelector(".pendant-simulator__photo-stage")'), true);
+  await evaluate(`photoHost.querySelector('template[data-pendant-simulator-photo]').content.replaceChildren();
+    photoHost.dataset.photoVersion='empty';photoHost.dispatchEvent(new CustomEvent('shopify:section:load',{bubbles:true}))`);
+  assert.equal(await evaluate('photoCanvas.parentElement===photoRoot && photoHost.querySelector("canvas")===photoCanvas'), true);
+  await evaluate(`{const img=document.createElement('img');img.src='/photo.svg';img.width=1000;img.height=1400;
+      photoHost.querySelector('template[data-pendant-simulator-photo]').content.append(img);}
+    photoHost.dispatchEvent(new CustomEvent('shopify:section:load',{bubbles:true}))`);
+  await waitFor('photoHost.querySelector(".pendant-simulator__photo")?.naturalHeight===1400');
+  await checkPhotoGeometry();
+  await command('Page.captureScreenshot', { format: 'png' }).then(result => writeFile('/tmp/pendant-photo-mobile.png', Buffer.from(result.data, 'base64')));
+  await evaluate(`photoHost.dataset.displayMode='simulator';photoHost.dataset.sizeMode='fixed';
+    photoHost.dataset.radiusScale='100';photoHost.dataset.verticalOffset='0'`);
+  assert.equal(await evaluate('photoCanvas.parentElement===photoRoot && photoRoot.dataset.displayMode==="simulator" && photoHost.querySelector("canvas")===photoCanvas'), true);
+  await evaluate(`photoHost.dataset.displayMode='photo';
+    window.disposedPhoto=photoHost.querySelector('img');for(const host of [...document.querySelectorAll('pendant-simulator')])host.remove()`);
+  assert.equal(await evaluate('__frames.size'), 0);
+  assert.equal(await evaluate('__resizeObservers.size'), 0);
+  assert.equal(await evaluate('__listeners.filter(record=>record.target instanceof HTMLImageElement||record.target instanceof HTMLCanvasElement||["scroll","resize","devicemotion","deviceorientation"].includes(record.type)).length'), 0);
+  assert.equal(await evaluate('disposedPhoto.hasAttribute("src")||disposedPhoto.hasAttribute("srcset")'), false);
+  assert.deepEqual(await evaluate('__csp'), []);
   await command('Page.navigate', { url: `${origin}/standalone` });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
@@ -529,7 +635,7 @@ try {
   await command('Page.navigate', { url: devServer.resolvedUrls.local[0] });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: hidden controls enable motion automatically; touch/click and keyboard permission fallback; automatic history-cache resume; independent sensor cleanup; tall rounded rectangular on/off LEDs; percentage padding and vertical offset; container sizing; hidden controls and headings collapse; live updates preserve fluid and sensors; scroll inertia; single asset loading; editor reloads; CSP; mobile layout; standalone and Vite development.');
+  console.log('Browser checks passed: photo overlay alignment at desktop/tablet/phone widths; image replacement and failure fallback; photo touch stirring and cleanup; hidden controls enable motion automatically; touch/click and keyboard permission fallback; automatic history-cache resume; independent sensor cleanup; tall rounded rectangular on/off LEDs; percentage padding and vertical offset; container sizing; hidden controls and headings collapse; live updates preserve fluid and sensors; scroll inertia; single asset loading; editor reloads; CSP; mobile layout; standalone and Vite development.');
 } finally {
   await devServer?.close();
   socket?.close();
