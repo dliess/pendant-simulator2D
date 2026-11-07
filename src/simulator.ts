@@ -8,11 +8,16 @@ const CANVAS_SIZE = 400;
 const CENTER = CANVAS_SIZE / 2;
 const HOUSING_RADIUS = 175;
 const DISPLAY_RADIUS = 158;
-const GRID_SIZE = 16;
-const LED_SPACING = 19;
-const LED_WIDTH = 9;
-const LED_HEIGHT = 12;
-const LED_CORNER_RADIUS = 2;
+// Physical LED counts, ordered from the bottom of the pendant to the top.
+const LED_ROWS_BOTTOM_TO_TOP = [4, 8, 10, 12, 12, 14, 14, 14, 14, 12, 12, 10, 8, 4];
+// Spread the specified rows toward the display border, retaining the reference
+// photo's slightly lower placement and keeping every LED inside the circle.
+const LED_SPACING_X = 22;
+const LED_SPACING_Y = 21;
+const LED_OFFSET_Y = 3;
+const LED_WIDTH = 7;
+const LED_HEIGHT = 14;
+const LED_CORNER_RADIUS = 3.5;
 const LED_ON_DENSITY = 3;
 const LED_GLOW_SIZE = 48;
 const FIXED_DT = 1 / 120;
@@ -225,19 +230,15 @@ export function mountSimulator(container: HTMLElement): () => void {
 
   const leds: LED[] = [];
 
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
-      const dx = x - (GRID_SIZE - 1) / 2;
-      const dy = y - (GRID_SIZE - 1) / 2;
-
-      // Approximate the pendant's rounded display.
-      if (Math.hypot(dx, dy) > 7.6) {
-        continue;
-      }
+  for (const [row, count] of LED_ROWS_BOTTOM_TO_TOP.entries()) {
+    for (let x = 0; x < count; x++) {
+      const dx = x - (count - 1) / 2;
+      // Canvas y increases downward, so the first row has the largest y.
+      const dy = (LED_ROWS_BOTTOM_TO_TOP.length - 1) / 2 - row;
 
       leds.push({
-        x: dx * LED_SPACING / DISPLAY_RADIUS,
-        y: dy * LED_SPACING / DISPLAY_RADIUS,
+        x: dx * LED_SPACING_X / DISPLAY_RADIUS,
+        y: (dy * LED_SPACING_Y + LED_OFFSET_Y) / DISPLAY_RADIUS,
         on: false,
       });
     }

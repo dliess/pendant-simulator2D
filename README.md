@@ -209,8 +209,17 @@ a tight halo and a wider bloom that add light where they overlap. The glow stays
 inside the circular display. Unlit LED cores remain dark even beside lit LEDs.
 Cached glow sprites keep the blur work out of the animation loop, and all halos
 render before the crisp cores, preserving the full on/off behavior.
-Each LED is a rounded rectangle, 12 units tall and 9 units wide (height:width 4:3),
-with a matching rounded rectangular glow. Both scale with the pendant.
+Each LED is a rounded capsule, 14 units tall and 7 units wide, with a matching
+glow. Both scale with the pendant.
+The display has 148 LEDs in 14 centered rows. From bottom to top, the row counts
+are 4, 8, 10, 12, 12, 14, 14, 14, 14, 12, 12, 10, 8, 4. The LED proportions and
+slightly lower placement follow the `Futuristic Blue LED Pendant.png` reference,
+with the grid spread outward for tighter border gaps. LED centers are 22 units
+apart horizontally and 21 vertically, and the grid sits 3 units below the circle's
+center. At the default 400-unit canvas size, the LED edges leave 17.5 units above
+the top row, 11.5 below the bottom row, and 11.5 at either side of the dark display.
+All LED cores fit inside the circle. These gaps scale with the pendant. The
+explicit row counts take precedence over the AI reference's different LED count.
 
 **Size mode → Set display size** is the default and preserves the existing
 width/radius settings and 16px block padding. **Pendant radius** scales the pendant

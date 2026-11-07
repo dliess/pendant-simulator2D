@@ -217,17 +217,40 @@ try {
   assert.equal(await evaluate('appearanceCanvas.toDataURL() === b.querySelector("canvas").toDataURL()'), true);
   // Sample LED centers, avoiding antialiased edges. Every core must be
   // either the unchanged display background or the full selected opaque color.
+  // Record the rendered core paths, including unlit LEDs, to verify the physical
+  // rows and the tighter border clearance independently of fluid.
+  const layout = await evaluate(`(() => {
+    const context=appearanceCanvas.getContext('2d'), original=context.moveTo, paths=[];
+    context.moveTo=function(x,y){paths.push({x,y});return original.call(this,x,y)};
+    try { __advance(1); } finally { context.moveTo=original; }
+    const rows=new Map();
+    for(const {y} of paths){const key=Math.round(y*10)/10;rows.set(key,(rows.get(key)||0)+1);}
+    return {counts:[...rows.entries()].sort((a,b)=>b[0]-a[0]).map(([,count])=>count),
+      top:Math.min(...paths.map(p=>p.y))-42,
+      bottom:358-(Math.max(...paths.map(p=>p.y))+14),
+      left:Math.min(...paths.map(p=>p.x))-3.5,
+      right:Math.max(...paths.map(p=>p.x))+3.5,
+      clearance:Math.min(...paths.map(p=>158-Math.hypot(Math.abs(p.x-200)+3.5,Math.abs(p.y+7-200)+7)))};
+  })()`);
+  assert.deepEqual(layout.counts, [4,8,10,12,12,14,14,14,14,12,12,10,8,4]);
+  assert.equal(layout.top, 17.5);
+  assert.equal(layout.bottom, 11.5);
+  assert.equal(layout.left, 53.5);
+  assert.equal(layout.right, 346.5);
+  assert.ok(layout.clearance>5, 'even the outer LED corners must stay inside the circle');
   await evaluate(`window.ledStates=(canvas,color)=>{
     const context=canvas.getContext('2d'),lit=color==='green'?[130,255,175,255]:[100,220,255,255];
     let on=0,off=0,shape=null;const invalid=[];
-    for(let y=0;y<16;y++)for(let x=0;x<16;x++){
-      const dx=x-7.5,dy=y-7.5;if(Math.hypot(dx,dy)>7.6)continue;
-      const pixel=Array.from(context.getImageData(Math.round(200+dx*19),Math.round(200+dy*19),1,1).data);
+    const rows=[4,8,10,12,12,14,14,14,14,12,12,10,8,4];
+    for(let row=rows.length-1;row>=0;row--)for(let x=0;x<rows[row];x++){
+      const dx=x-(rows[row]-1)/2,dy=(rows.length-1)/2-row;
+      const px=200+dx*22,py=203+dy*21;
+      const pixel=Array.from(context.getImageData(Math.round(px),Math.round(py),1,1).data);
       if(pixel.every((value,k)=>value===lit[k])){
         on++;
-        if(!shape){const at=(ox,oy)=>Array.from(context.getImageData(Math.floor(200+dx*19+ox),Math.floor(200+dy*19+oy),1,1).data);
-          shape={vertical:at(0,5),horizontal:at(5,0),corner:at(4,5),inside:at(3,4),
-            glowNear:at(0,-8),glowFar:at(0,-12),glowOutside:at(0,-17)};}
+        if(!shape){const at=(ox,oy)=>Array.from(context.getImageData(Math.floor(px+ox),Math.floor(py+oy),1,1).data);
+          shape={vertical:at(0,6),horizontal:at(4,0),corner:at(3,6),inside:at(2,4),
+            glowNear:at(0,-9),glowFar:at(0,-11),glowOutside:at(0,-17)};}
       }
       else if(pixel.every((value,k)=>value===[2,7,11,255][k]))off++;
       else invalid.push(pixel);
@@ -236,6 +259,7 @@ try {
     await evaluate(`a.dataset.ledColor=${JSON.stringify(color)};__advance(6)`);
     const states=await evaluate(`ledStates(appearanceCanvas,${JSON.stringify(color)})`);
     assert.deepEqual(states.invalid, [], 'LED cores must never have intermediate brightness');
+    assert.equal(states.on + states.off, 148);
     assert.ok(states.on > 0 && states.off > 0, JSON.stringify(states));
     const full=color==='green'?[130,255,175,255]:[100,220,255,255];
     assert.deepEqual(states.shape.vertical,full,'rounded LEDs extend further vertically');
@@ -245,11 +269,13 @@ try {
     const channel=color==='green'?1:2;
     assert.ok(states.shape.glowNear[channel]>states.shape.glowFar[channel],JSON.stringify(states.shape));
     assert.ok(states.shape.glowNear[channel]>=100,'the halo is visibly bright near the LED');
-    assert.ok(states.shape.glowFar[channel]>=25,'the wider halo remains visible farther from the LED');
+    assert.ok(states.shape.glowFar[channel]>=25,`the wider halo remains visible farther from the LED: ${JSON.stringify(states.shape)}`);
     assert.ok(states.shape.glowFar[channel]>states.shape.glowOutside[channel],'the soft halo fades outward');
     assert.deepEqual(states.shape.glowOutside,[2,7,11,255],'neighboring unlit LED cores remain dark');
   }
   assert.equal(await evaluate('appearanceCanvas.toDataURL() === b.querySelector("canvas").toDataURL()'), true);
+  await command('Page.captureScreenshot', { format: 'png' }).then(result =>
+    writeFile('/tmp/pendant-led-reference-layout.png', Buffer.from(result.data, 'base64')));
   await command('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 1, mobile: false });
   await delay(100);
   for (const [scale, width] of [['50',200],['100',400],['150',600],['10',200],['200',600],['invalid',400]]) {
@@ -302,13 +328,21 @@ try {
   // Exercise the original stirring gesture at half radius as well.
   await evaluate('a.dataset.ledColor="blue";a.dataset.radiusScale="50";a.dataset.verticalOffset="5"');
   const rect = await evaluate('a.querySelector("canvas").getBoundingClientRect().toJSON()');
-  const y = rect.y + rect.height * 0.75;
-  for (const [type, x, buttons] of [['mousePressed', rect.x + rect.width * 0.3, 1],
-    ['mouseMoved', rect.x + rect.width * 0.7, 1], ['mouseReleased', rect.x + rect.width * 0.7, 0]]) {
-    await command('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1 });
+  // Stir upward through the pool so a splash visibly reaches other LED rows.
+  for (const [type, x, y, buttons] of [['mousePressed', 0.3, 0.8, 1],
+    ['mouseMoved', 0.5, 0.65, 1], ['mouseMoved', 0.7, 0.5, 1], ['mouseReleased', 0.7, 0.5, 0]]) {
+    await command('Input.dispatchMouseEvent', { type, x: rect.x + rect.width * x,
+      y: rect.y + rect.height * y, button: 'left', buttons, clickCount: 1 });
   }
-  await evaluate('__advance(30)');
-  assert.equal(await evaluate('a.querySelector("canvas").toDataURL() !== b.querySelector("canvas").toDataURL()'), true);
+  // LEDs are binary samples of the fluid. Look for the splash during the next
+  // second rather than requiring a changed occupancy at one arbitrary frame.
+  assert.equal(await evaluate(`(() => {
+    for(let frame=0;frame<120;frame++){
+      __advance(1);
+      if(appearanceCanvas.toDataURL()!==b.querySelector('canvas').toDataURL())return true;
+    }
+    return false;
+  })()`), true, 'stirring changes the LED display independently of the other instance');
   assert.deepEqual(await evaluate('ledStates(appearanceCanvas,"blue").invalid'), []);
   await evaluate('a.querySelector("button").click()');
   await waitFor('a.querySelector("button").getAttribute("aria-pressed") === "true"');
@@ -524,6 +558,9 @@ try {
   for (let step = 1; step <= 24; step++) {
     await evaluate(`{const area=document.querySelector('#scroll-area');area.scrollTop=${step * 8};area.dispatchEvent(new Event('scroll'));__advance(1)}`);
   }
+  // Let the response reach a different LED occupancy, as in the scroll checks
+  // above; an immediate image can match despite different particle velocities.
+  await evaluate('__advance(60)');
   assert.equal(await evaluate('sameFluid()'), false, 're-enabling scroll motion takes effect on just that block');
   await evaluate(`window.toggleImage=toggleCanvas.toDataURL();moving.dataset.reactToScrolling='false'`);
   assert.equal(await evaluate(`moving.querySelector('canvas')===toggleCanvas && toggleCanvas.toDataURL()===toggleImage && PendantSimulator.mountSimulator(moving)===toggleCleanup`), true);
