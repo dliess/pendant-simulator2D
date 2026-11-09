@@ -1,5 +1,5 @@
 import './style.css';
-import { mountSimulator, unmountSimulator, updateSimulatorAppearance } from './simulator';
+import { mountSimulator, unmountSimulator, updateSimulatorAppearance, updateSimulatorParticleCount } from './simulator';
 
 export { mountSimulator };
 
@@ -11,7 +11,7 @@ if (!customElements.get(tag)) {
   class PendantSimulatorElement extends HTMLElement {
     static get observedAttributes() {
       return ['data-heading', 'data-show-heading', 'data-display-width',
-        'data-particle-count', 'data-fill-level', 'data-gravity-strength',
+        'data-particle-count', 'data-particle-count-mobile', 'data-fill-level', 'data-gravity-strength',
         'data-background-color', 'data-text-color', 'data-transparent-background',
         'data-react-to-scrolling', 'data-show-housing', 'data-led-color', 'data-radius-scale',
         'data-show-motion-controls', 'data-size-mode', 'data-container-padding', 'data-vertical-offset',
@@ -25,6 +25,10 @@ if (!customElements.get(tag)) {
       if (!this.isConnected || oldValue === newValue) return;
       // The frame loop reads this input setting live, preserving fluid and sensors.
       if (name === 'data-react-to-scrolling') return;
+      if (name === 'data-particle-count' || name === 'data-particle-count-mobile') {
+        updateSimulatorParticleCount(this);
+        return;
+      }
       if (name === 'data-photo-version') {
         // Editor morphs can update attributes before replacing the image template.
         queueMicrotask(() => { if (this.isConnected) updateSimulatorAppearance(this); });

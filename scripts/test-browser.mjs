@@ -672,7 +672,74 @@ try {
   await command('Page.navigate', { url: devServer.resolvedUrls.local[0] });
   await waitFor('document.querySelectorAll("#app .pendant-simulator").length === 1 && __frames.size === 1');
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: photo overlay alignment at desktop/tablet/phone widths; image replacement and failure fallback; photo touch stirring and cleanup; hidden controls enable motion automatically; touch/click and keyboard permission fallback; automatic history-cache resume; independent sensor cleanup; tall rounded rectangular on/off LEDs; percentage padding and vertical offset; container sizing; hidden controls and headings collapse; live updates preserve fluid and sensors; scroll inertia; single asset loading; editor reloads; CSP; mobile layout; standalone and Vite development.');
+  // Inspect the actual fluid arrays through the shared source module, rather
+  // than inferring a simulation's resolution from its coarse binary LED image.
+  await command('Emulation.setDeviceMetricsOverride', { width: 750, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`(async () => {
+    const {FluidSimulation}=await import('/src/fluid.ts');
+    const {mountSimulator}=await import('/src/simulator.ts');
+    window.responsiveMount=mountSimulator;
+    mountSimulator(document.querySelector('#app'))();
+    await import('/src/shopify.ts');
+    const update=FluidSimulation.prototype.update;
+    window.__counts=[];
+    FluidSimulation.prototype.update=function(dt){
+      __counts.push(this.particles.length);window.__lastFluid=this;
+      return update.call(this,dt);
+    };
+    window.sampleCount=()=>{__counts=[];__advance(3);return [...new Set(__counts)];};
+    window.responsive=document.createElement('pendant-simulator');
+    responsive.dataset.particleCount='2000';responsive.dataset.particleCountMobile='500';
+    responsive.dataset.fillLevel='35';responsive.dataset.reactToScrolling='false';
+    document.querySelector('#app').append(responsive);
+    window.responsiveCanvas=responsive.querySelector('canvas');
+    window.responsiveCleanup=mountSimulator(responsive);
+  })()`);
+  await waitFor('__frames.size===1');
+  assert.deepEqual(await evaluate('sampleCount()'), [2000], '750px uses the desktop count');
+  await evaluate(`window.savedFluid=__lastFluid;responsive.querySelector('button').click()`);
+  await waitFor(`responsive.querySelector('button').getAttribute('aria-pressed')==='true'`);
+  await evaluate(`responsive.dataset.particleCountMobile='1000'`);
+  assert.deepEqual(await evaluate('sampleCount()'), [2000]);
+  assert.equal(await evaluate('__lastFluid===savedFluid'), true, 'inactive mobile setting preserves fluid');
+  await command('Emulation.setDeviceMetricsOverride', { width: 749, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await waitFor('sampleCount()[0]===1000');
+  assert.equal(await evaluate('__lastFluid===savedFluid'), false, 'crossing the breakpoint changes resolution');
+  await evaluate('window.savedFluid=__lastFluid');
+  await command('Emulation.setDeviceMetricsOverride', { width: 600, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await delay(100);
+  assert.deepEqual(await evaluate('sampleCount()'), [1000]);
+  assert.equal(await evaluate('__lastFluid===savedFluid'), true, 'resizing within mobile preserves fluid');
+  await evaluate(`responsive.dataset.particleCount='3000'`);
+  assert.deepEqual(await evaluate('sampleCount()'), [1000]);
+  assert.equal(await evaluate('__lastFluid===savedFluid'), true, 'inactive desktop setting preserves fluid');
+  await evaluate(`responsive.dataset.particleCountMobile='500'`);
+  assert.deepEqual(await evaluate('sampleCount()'), [500], 'active mobile setting updates immediately');
+  for (const [value, expected] of [['invalid',3000],['',3000],['-1',500],['20000',10000],['500',500]]) {
+    await evaluate(`responsive.dataset.particleCountMobile=${JSON.stringify(value)}`);
+    assert.deepEqual(await evaluate('sampleCount()'), [expected]);
+  }
+  await command('Emulation.setDeviceMetricsOverride', { width: 750, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await waitFor('sampleCount()[0]===3000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 749, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await waitFor('sampleCount()[0]===500');
+  await evaluate(`delete responsive.dataset.particleCountMobile`);
+  assert.deepEqual(await evaluate('sampleCount()'), [3000], 'legacy embeds use the desktop count on mobile');
+  await evaluate('window.savedFluid=__lastFluid');
+  await command('Emulation.setDeviceMetricsOverride', { width: 750, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await delay(100);
+  assert.deepEqual(await evaluate('sampleCount()'), [3000]);
+  assert.equal(await evaluate('__lastFluid===savedFluid'), true, 'equal counts preserve fluid at the breakpoint');
+  assert.equal(await evaluate(`responsive.querySelector('canvas')===responsiveCanvas &&
+    responsiveMount(responsive)===responsiveCleanup &&
+    responsive.querySelector('button').getAttribute('aria-pressed')==='true'`), true);
+  assert.equal(await evaluate('__listeners.filter(record=>record.type==="devicemotion"||record.type==="deviceorientation").length'), 2);
+  await evaluate('responsive.remove()');
+  assert.equal(await evaluate('__frames.size'), 0);
+  assert.equal(await evaluate('__resizeObservers.size'), 0);
+  assert.equal(await evaluate('__listeners.filter(record=>record.target instanceof MediaQueryList||record.type==="devicemotion"||record.type==="deviceorientation").length'), 0);
+  assert.deepEqual(errors, []);
+  console.log('Browser checks passed: responsive desktop/mobile particle counts and live edits preserve UI/sensors; exact breakpoint and fallback handling; media-query cleanup; photo overlay alignment at desktop/tablet/phone widths; image replacement and failure fallback; photo touch stirring and cleanup; hidden controls enable motion automatically; touch/click and keyboard permission fallback; automatic history-cache resume; independent sensor cleanup; tall rounded rectangular on/off LEDs; percentage padding and vertical offset; container sizing; hidden controls and headings collapse; live updates preserve fluid and sensors; scroll inertia; single asset loading; editor reloads; CSP; mobile layout; standalone and Vite development.');
 } finally {
   await devServer?.close();
   socket?.close();

@@ -28,10 +28,12 @@ const MAX_STEPS_PER_FRAME = 6;
 const instanceKey = Symbol.for('pendant-simulator.cleanup');
 const motionControlsKey = Symbol.for('pendant-simulator.motion-controls');
 const photoKey = Symbol.for('pendant-simulator.photo');
+const particleCountKey = Symbol.for('pendant-simulator.particle-count');
 type SimulatorContainer = HTMLElement & {
   [instanceKey]?: () => void;
   [motionControlsKey]?: () => void;
   [photoKey]?: () => void;
+  [particleCountKey]?: () => void;
 };
 
 function numberSetting(value: string | undefined, fallback: number, min: number, max: number) {
@@ -97,7 +99,14 @@ export function mountSimulator(container: HTMLElement): () => void {
   const view = doc.defaultView;
   if (!view) throw new Error('The simulator needs a browser window');
 
-  const particleCount = Math.round(numberSetting(container.dataset.particleCount, 2000, 500, 10000));
+  const mobileViewport = view.matchMedia('(max-width: 749px)');
+  function configuredParticleCount() {
+    const desktop = numberSetting(container.dataset.particleCount, 2000, 500, 10000);
+    return Math.round(mobileViewport.matches
+      ? numberSetting(container.dataset.particleCountMobile, desktop, 500, 10000)
+      : desktop);
+  }
+  let particleCount = configuredParticleCount();
   const fillLevel = numberSetting(container.dataset.fillLevel, 25, 10, 90) / 100;
   const gravityStrength = numberSetting(container.dataset.gravityStrength, 14, 1, 30);
   const width = numberSetting(container.dataset.displayWidth, 400, 200, 800);
@@ -154,6 +163,7 @@ export function mountSimulator(container: HTMLElement): () => void {
     scrolledSinceFrame = false;
     updateVerticalOffset(container, root);
   });
+  listen(mobileViewport, 'change', syncParticleCount);
 
   function updateMotionStatus(status: MotionStatus) {
     const messages: Record<MotionStatus, string> = {
@@ -495,6 +505,23 @@ export function mountSimulator(container: HTMLElement): () => void {
     if (pointerId !== undefined && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
   }
 
+  function syncParticleCount() {
+    if (destroyed || !fluid) return;
+    const next = configuredParticleCount();
+    if (next === particleCount) return;
+    particleCount = next;
+    releaseDrag();
+    // Changing resolution restarts only the fluid, keeping the existing canvas,
+    // photo, observers, and phone-motion permission/listeners in place.
+    fluid = new FluidSimulation(1, particleCount, fillLevel);
+    fluid.setGravity(0, gravityStrength);
+    scrollMotion.reset();
+    scrolledSinceFrame = false;
+    accumulator = 0;
+    lastTime = view!.performance.now();
+    render();
+  }
+
   function reconcileVisibility() {
     lastTime = view!.performance.now();
     accumulator = 0;
@@ -554,11 +581,13 @@ export function mountSimulator(container: HTMLElement): () => void {
     delete host[instanceKey];
     delete host[motionControlsKey];
     delete host[photoKey];
+    delete host[particleCountKey];
   }
 
   host[instanceKey] = cleanup;
   host[motionControlsKey] = syncMotionControls;
   host[photoKey] = photo.update;
+  host[particleCountKey] = syncParticleCount;
   container.append(root);
   updateSimulatorAppearance(container);
   render();
@@ -566,6 +595,11 @@ export function mountSimulator(container: HTMLElement): () => void {
   sizeObserver?.observe(root, { box: 'border-box' });
   schedule();
   return cleanup;
+}
+
+/** Apply desktop/mobile count changes without replacing UI or motion controls. */
+export function updateSimulatorParticleCount(container: HTMLElement) {
+  (container as SimulatorContainer)[particleCountKey]?.();
 }
 
 /** Used by the custom element and Shopify editor before removing a block. */

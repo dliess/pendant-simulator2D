@@ -166,9 +166,20 @@ Different elements have independent fluid state, canvas, drag capture, animation
 and motion permission/status controls. Optional `data-*` settings use the same
 values as the Liquid block; `data-fill-level` is a percentage of initial fill
 height, not an area fraction.
-The **Particle count** dropdown offers 500 to 10,000 in 500-particle increments,
-with a default of 2,000. A dropdown supports values beyond Shopify's range-slider
-maximum, which must be below 10,000. Standalone mounts accept the same limits.
+The **Particle count (desktop)** and **Particle count (mobile)** dropdowns each
+offer 500 to 10,000 in 500-particle increments. Desktop defaults to 2,000 and keeps
+the previously saved particle count. Mobile defaults to 1,000 and applies below
+750px viewport width, including the theme editor's mobile preview. Choose a lower
+mobile count to reduce simulation work on phones. A dropdown supports values
+beyond Shopify's range-slider maximum, which must be below 10,000.
+
+Crossing the 750px breakpoint or editing the active count restarts the fluid at
+the configured initial fill height. The canvas, photo, and enabled phone-motion
+controls stay in place. Resizing within the same breakpoint, editing the inactive
+count, or switching between equal counts preserves the existing fluid.
+Standalone embeds accept `data-particle-count="2000"` and
+`data-particle-count-mobile="1000"` with the same limits; omitting the mobile
+attribute uses the desktop count on all screens for backward compatibility.
 
 The default fill height is 25%, leaving headroom for splashes. The solver uses
 85% FLIP and 15% PIC blending to preserve motion while retaining damping, and

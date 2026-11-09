@@ -86,6 +86,11 @@ test('native theme block exposes configurable settings and editor identity witho
   assert.equal(particles.default, '2000');
   assert.deepEqual(particles.options.map(option => Number(option.value)),
     Array.from({ length: 20 }, (_, k) => (k + 1) * 500));
+  const mobileParticles = block.settings.find(setting => setting.id === 'particle_count_mobile');
+  assert.equal(mobileParticles.type, 'select');
+  assert.equal(mobileParticles.default, '1000');
+  assert.deepEqual(mobileParticles.options, particles.options);
+  assert.match(liquid, /data-particle-count-mobile="{{ block\.settings\.particle_count_mobile \| default: '1000' }}"/);
   for (const setting of block.settings.filter(setting => setting.type === 'range')) {
     // Shopify rejects these ranges at upload even though Theme Check accepts them.
     assert.ok(setting.max < 10000, `Shopify range limit exceeded: ${setting.id}`);
