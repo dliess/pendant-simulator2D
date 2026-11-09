@@ -8,12 +8,20 @@ const CANVAS_SIZE = 400;
 const CENTER = CANVAS_SIZE / 2;
 const HOUSING_RADIUS = 175;
 const DISPLAY_RADIUS = 158;
-// Physical LED counts, ordered from the bottom of the pendant to the top.
-const LED_ROWS_BOTTOM_TO_TOP = [4, 8, 10, 12, 12, 14, 14, 14, 14, 12, 12, 10, 8, 4];
-// Spread the specified rows toward the display border, retaining the reference
-// photo's slightly lower placement and keeping every LED inside the circle.
-const LED_SPACING_X = 22;
-const LED_SPACING_Y = 21;
+// Physical LED counts run from bottom to top. Each layout's spacing keeps all
+// cores inside the circular display while retaining the slightly lower placement.
+const LED_LAYOUTS = {
+  'layout-A': {
+    rows: [4, 8, 10, 12, 12, 14, 14, 14, 14, 12, 12, 10, 8, 4],
+    spacingX: 22,
+    spacingY: 21,
+  },
+  'layout-B': {
+    rows: [8, 10, 12, 14, 16, 16, 16, 16, 16, 16, 16, 16, 14, 12, 10, 8],
+    spacingX: 18,
+    spacingY: 17,
+  },
+};
 const LED_OFFSET_Y = 3;
 const LED_WIDTH = 7;
 const LED_HEIGHT = 14;
@@ -239,18 +247,26 @@ export function mountSimulator(container: HTMLElement): () => void {
   }
 
   const leds: LED[] = [];
+  let currentLayout: keyof typeof LED_LAYOUTS | undefined;
 
-  for (const [row, count] of LED_ROWS_BOTTOM_TO_TOP.entries()) {
-    for (let x = 0; x < count; x++) {
-      const dx = x - (count - 1) / 2;
-      // Canvas y increases downward, so the first row has the largest y.
-      const dy = (LED_ROWS_BOTTOM_TO_TOP.length - 1) / 2 - row;
+  function syncLEDLayout() {
+    const name = container.dataset.pixelLayout === 'layout-B' ? 'layout-B' : 'layout-A';
+    if (currentLayout === name) return;
+    currentLayout = name;
+    const { rows, spacingX, spacingY } = LED_LAYOUTS[name];
+    leds.length = 0;
+    for (const [row, count] of rows.entries()) {
+      for (let x = 0; x < count; x++) {
+        const dx = x - (count - 1) / 2;
+        // Canvas y increases downward, so the first row has the largest y.
+        const dy = (rows.length - 1) / 2 - row;
 
-      leds.push({
-        x: dx * LED_SPACING_X / DISPLAY_RADIUS,
-        y: (dy * LED_SPACING_Y + LED_OFFSET_Y) / DISPLAY_RADIUS,
-        on: false,
-      });
+        leds.push({
+          x: dx * spacingX / DISPLAY_RADIUS,
+          y: (dy * spacingY + LED_OFFSET_Y) / DISPLAY_RADIUS,
+          on: false,
+        });
+      }
     }
   }
 
@@ -381,6 +397,7 @@ export function mountSimulator(container: HTMLElement): () => void {
   }
 
   function render() {
+    syncLEDLayout();
     // Clear the previous frame so transparent mode exposes the theme behind the
     // round housing without changing the housing, display, or LED colors.
     ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);

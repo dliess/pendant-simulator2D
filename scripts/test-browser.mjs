@@ -219,8 +219,8 @@ try {
   // either the unchanged display background or the full selected opaque color.
   // Record the rendered core paths, including unlit LEDs, to verify the physical
   // rows and the tighter border clearance independently of fluid.
-  const layout = await evaluate(`(() => {
-    const context=appearanceCanvas.getContext('2d'), original=context.moveTo, paths=[];
+  await evaluate(`window.readLEDLayout = canvas => {
+    const context=canvas.getContext('2d'), original=context.moveTo, paths=[];
     context.moveTo=function(x,y){paths.push({x,y});return original.call(this,x,y)};
     try { __advance(1); } finally { context.moveTo=original; }
     const rows=new Map();
@@ -231,7 +231,8 @@ try {
       left:Math.min(...paths.map(p=>p.x))-3.5,
       right:Math.max(...paths.map(p=>p.x))+3.5,
       clearance:Math.min(...paths.map(p=>158-Math.hypot(Math.abs(p.x-200)+3.5,Math.abs(p.y+7-200)+7)))};
-  })()`);
+  }`);
+  const layout = await evaluate('readLEDLayout(appearanceCanvas)');
   assert.deepEqual(layout.counts, [4,8,10,12,12,14,14,14,14,12,12,10,8,4]);
   assert.equal(layout.top, 17.5);
   assert.equal(layout.bottom, 11.5);
@@ -274,6 +275,29 @@ try {
     assert.deepEqual(states.shape.glowOutside,[2,7,11,255],'neighboring unlit LED cores remain dark');
   }
   assert.equal(await evaluate('appearanceCanvas.toDataURL() === b.querySelector("canvas").toDataURL()'), true);
+  // Layout changes only replace the LED coordinates. Check every rendered row,
+  // circle clearance, independent instances, and restoration of the same fluid.
+  await evaluate(`window.layoutCleanup=PendantSimulator.mountSimulator(a);
+    window.layoutListeners=__listeners.filter(record=>record.target===appearanceCanvas);
+    a.dataset.pixelLayout='layout-B'`);
+  const layoutB = await evaluate('readLEDLayout(appearanceCanvas)');
+  assert.deepEqual(layoutB.counts, [8,10,12,14,16,16,16,16,16,16,16,16,14,12,10,8]);
+  assert.equal(layoutB.counts.reduce((sum, count) => sum + count, 0), 216);
+  assert.ok(layoutB.clearance > 3, 'all layout-B LED cores must fit inside the display');
+  assert.equal(await evaluate('a.querySelector("canvas")===appearanceCanvas && PendantSimulator.mountSimulator(a)===layoutCleanup'), true);
+  assert.ok(await evaluate('layoutListeners.every(record=>__listeners.includes(record))'));
+  assert.deepEqual(await evaluate('readLEDLayout(b.querySelector("canvas")).counts'), layout.counts);
+  assert.ok(await evaluate('ledPixels(appearanceCanvas).blue > 100'), 'layout-B renders lit fluid LEDs');
+  for (const value of ['layout-A', 'layout-B', 'invalid', null]) {
+    await evaluate(value === null ? 'a.removeAttribute("data-pixel-layout")' : `a.dataset.pixelLayout=${JSON.stringify(value)}`);
+    const rendered = await evaluate('readLEDLayout(appearanceCanvas)');
+    assert.deepEqual(rendered.counts, value === 'layout-B' ? layoutB.counts : layout.counts);
+    assert.equal(await evaluate('a.querySelector("canvas")===appearanceCanvas && PendantSimulator.mountSimulator(a)===layoutCleanup'), true);
+    if (value !== 'layout-B') {
+      assert.equal(await evaluate('appearanceCanvas.toDataURL() === b.querySelector("canvas").toDataURL()'), true,
+        'restoring layout-A must preserve the same liquid as the untouched instance');
+    }
+  }
   await command('Page.captureScreenshot', { format: 'png' }).then(result =>
     writeFile('/tmp/pendant-led-reference-layout.png', Buffer.from(result.data, 'base64')));
   await command('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 1, mobile: false });

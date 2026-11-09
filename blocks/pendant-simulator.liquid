@@ -22,6 +22,7 @@
   data-vertical-offset="{{ block.settings.vertical_offset | default: 0 }}"
   data-show-housing="{{ block.settings.show_housing }}"
   data-led-color="{{ block.settings.led_color | default: 'blue' | escape }}"
+  data-pixel-layout="{{ block.settings.pixel_layout | default: 'layout-A' | escape }}"
   data-radius-scale="{{ block.settings.radius_scale | default: 100 }}"
   data-particle-count="{{ block.settings.particle_count }}"
   data-particle-count-mobile="{{ block.settings.particle_count_mobile | default: '1000' }}"
@@ -200,6 +201,16 @@
         { "value": "green", "label": "Green" }
       ],
       "default": "blue"
+    },
+    {
+      "type": "select",
+      "id": "pixel_layout",
+      "label": "Pixel layout",
+      "options": [
+        { "value": "layout-A", "label": "layout-A (148 LEDs)" },
+        { "value": "layout-B", "label": "layout-B (216 LEDs)" }
+      ],
+      "default": "layout-A"
     },
     {
       "type": "select",

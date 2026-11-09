@@ -13,7 +13,7 @@ if (!customElements.get(tag)) {
       return ['data-heading', 'data-show-heading', 'data-display-width',
         'data-particle-count', 'data-particle-count-mobile', 'data-fill-level', 'data-gravity-strength',
         'data-background-color', 'data-text-color', 'data-transparent-background',
-        'data-react-to-scrolling', 'data-show-housing', 'data-led-color', 'data-radius-scale',
+        'data-react-to-scrolling', 'data-show-housing', 'data-led-color', 'data-pixel-layout', 'data-radius-scale',
         'data-show-motion-controls', 'data-size-mode', 'data-container-padding', 'data-vertical-offset',
         'data-display-mode', 'data-photo-version', 'data-photo-center-x', 'data-photo-center-y', 'data-photo-diameter'];
     }
@@ -35,7 +35,7 @@ if (!customElements.get(tag)) {
         return;
       }
       if (name === 'data-background-color' || name === 'data-text-color' || name === 'data-transparent-background'
-        || name === 'data-show-housing' || name === 'data-led-color' || name === 'data-radius-scale'
+        || name === 'data-show-housing' || name === 'data-led-color' || name === 'data-pixel-layout' || name === 'data-radius-scale'
         || name === 'data-heading' || name === 'data-show-heading' || name === 'data-show-motion-controls'
         || name === 'data-size-mode' || name === 'data-container-padding' || name === 'data-vertical-offset'
         || name === 'data-display-mode' || name === 'data-photo-center-x' || name === 'data-photo-center-y'

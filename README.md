@@ -74,7 +74,7 @@ under `dist/shopify-theme` for manual copying.
 Open the desired product template in **Online Store → Themes → Customize**, then
 choose **Add block → Pendant simulator** in an existing section that accepts native
 `@theme` blocks. Configure its heading, phone motion controls, background and text colors, housing,
-LED color, size mode, container padding or display width/radius, fill height, particle count, gravity strength,
+LED color, pixel layout, size mode, container padding or display width/radius, fill height, particle count, gravity strength,
 and **React to scrolling**. No standalone section, asset-loader snippet, layout
 edit, or template edit is required. Sections that only support their own local block
 types cannot accept an arbitrary native theme block; this deployment does not
@@ -222,7 +222,8 @@ Cached glow sprites keep the blur work out of the animation loop, and all halos
 render before the crisp cores, preserving the full on/off behavior.
 Each LED is a rounded capsule, 14 units tall and 7 units wide, with a matching
 glow. Both scale with the pendant.
-The display has 148 LEDs in 14 centered rows. From bottom to top, the row counts
+**Pixel layout** selects the original **layout-A** (default) or **layout-B**.
+Layout-A has 148 LEDs in 14 centered rows. From bottom to top, the row counts
 are 4, 8, 10, 12, 12, 14, 14, 14, 14, 12, 12, 10, 8, 4. The LED proportions and
 slightly lower placement follow the `Futuristic Blue LED Pendant.png` reference,
 with the grid spread outward for tighter border gaps. LED centers are 22 units
@@ -231,6 +232,14 @@ center. At the default 400-unit canvas size, the LED edges leave 17.5 units abov
 the top row, 11.5 below the bottom row, and 11.5 at either side of the dark display.
 All LED cores fit inside the circle. These gaps scale with the pendant. The
 explicit row counts take precedence over the AI reference's different LED count.
+
+Layout-B has 216 LEDs in 16 centered rows. From bottom to top, its row counts are
+8, 10, 12, 14, 16, 16, 16, 16, 16, 16, 16, 16, 14, 12, 10, 8. Its LED centers are
+18 units apart horizontally and 17 vertically, keeping every core inside the
+same circular display with the same LED shape and 3-unit downward offset.
+Switching layouts preserves the fluid and phone motion. Both layouts work in
+photo overlay mode. Standalone embeds select it with `data-pixel-layout="layout-B"`
+on the simulator container; omitted or unrecognized values use layout-A.
 
 **Size mode → Set display size** is the default and preserves the existing
 width/radius settings and 16px block padding. **Pendant radius** scales the pendant

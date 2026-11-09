@@ -48,6 +48,11 @@ test('native theme block exposes configurable settings and editor identity witho
   assert.equal(ledColor.default, 'blue');
   assert.deepEqual(ledColor.options.map(option => option.value), ['blue', 'green']);
   assert.match(liquid, /data-led-color="{{ block\.settings\.led_color \| default: 'blue' \| escape }}"/);
+  const pixelLayout = block.settings.find(setting => setting.id === 'pixel_layout');
+  assert.equal(pixelLayout.type, 'select');
+  assert.equal(pixelLayout.default, 'layout-A');
+  assert.deepEqual(pixelLayout.options.map(option => option.value), ['layout-A', 'layout-B']);
+  assert.match(liquid, /data-pixel-layout="{{ block\.settings\.pixel_layout \| default: 'layout-A' \| escape }}"/);
   const radius = block.settings.find(setting => setting.id === 'radius_scale');
   assert.equal(radius.type, 'range');
   assert.deepEqual([radius.min, radius.max, radius.step, radius.default, radius.unit], [50, 150, 5, 100, '%']);
